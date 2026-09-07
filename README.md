@@ -14,6 +14,7 @@ engine/
   fetch_soxl.py        SOXL 일봉 -> data/SOXL_OHLC.csv   (기준 거래일 캘린더)
   fetch_soxs.py        SOXS 일봉 + 미기록 분할 자동 보정
   regime_build.py      QQQ 주봉 RSI(14, Wilder) -> data/qqq_regime.csv
+  stabilize.py         허용오차 안의 과거 데이터 흔들림을 이전 값으로 되돌린다
   build_page_data.py   위 CSV -> dist/data.js (오프라인 폴백) + dist/data.json (런타임 fetch)
   strategy.py          백테스트 엔진 + next_orders() (주문 산출 기준 구현)
   run.py               백테스트 실행
@@ -38,7 +39,7 @@ verify/
 `.github/workflows/page-data.yml` 이 평일 21:30 UTC(한국 06:30, 미국장 마감 +1.5h)에 돈다.
 
 ```
-fetch_soxl -> regime_build -> fetch_soxs -> build_page_data -> 검증 4종 -> 커밋
+fetch_soxl -> regime_build -> fetch_soxs -> stabilize -> build_page_data -> 검증 4종 -> 커밋
 ```
 
 **검증을 통과해야만 커밋한다.** 시세 제공처가 이상한 값을 주거나 SOXS 분할 보정이
@@ -57,6 +58,7 @@ fetch_soxl -> regime_build -> fetch_soxs -> build_page_data -> 검증 4종 -> �
 python engine/fetch_soxl.py        # 순서 중요: SOXL 이 기준 캘린더
 python engine/regime_build.py
 python engine/fetch_soxs.py
+python engine/stabilize.py         # 야후 조정계수 노이즈 제거 (git 저장소에서만 동작)
 python engine/build_page_data.py
 
 python verify/page_parity.py && node verify/page_parity.js
