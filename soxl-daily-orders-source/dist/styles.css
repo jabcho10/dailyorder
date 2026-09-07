@@ -287,3 +287,45 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:16px;fl
   button{padding:9px 15px}
   .chip{font-size:12px}
 }
+
+/* ── 오늘 주문 (맨 위 요약) ───────────────────────────── */
+.today{border-width:2px;border-color:var(--accent)}
+.today .step{font-size:12px;letter-spacing:.1em}
+.today h2{font-family:var(--mono);font-size:17px}
+.ordgrp{margin-bottom:12px}
+.ordgrp:last-child{margin-bottom:0}
+.ordgrp h4{margin:0 0 7px;font-size:11.5px;letter-spacing:.08em;
+  display:flex;align-items:center;gap:7px}
+.ordgrp h4 i{font-style:normal;font-size:11px;color:var(--dim);font-weight:400}
+.buy h4{color:var(--good)}
+.sell h4{color:var(--accent)}
+.ord{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  border:1px solid var(--line);border-left:3px solid var(--line);
+  border-radius:9px;padding:9px 12px;margin-bottom:6px;background:var(--bg)}
+.ord:last-child{margin-bottom:0}
+.buy .ord{border-left-color:var(--good)}
+.sell .ord{border-left-color:var(--accent)}
+.ord.force{border-left-color:var(--bad);background:var(--bad-bg)}
+.ord-l{min-width:0}
+.ord-l b{display:block;font-size:14px}
+.ord-l span{display:block;font-size:11.5px;color:var(--dim);margin-top:1px}
+.ord-r{text-align:right;white-space:nowrap;flex:0 0 auto}
+.ord-r b{display:block;font-family:var(--mono);font-size:15px}
+.ord-r span{display:block;font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-top:1px}
+.ord-r em{font-style:normal;color:var(--warn);font-size:10.5px}
+.ord-none{border:1px dashed var(--line);border-radius:9px;padding:14px;
+  text-align:center;color:var(--dim);font-size:13px}
+.tot{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--line)}
+.tot div{flex:1 1 130px;border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:var(--bg)}
+.tot span{display:block;font-size:11px;color:var(--dim)}
+.tot b{display:block;font-family:var(--mono);font-size:16px;margin-top:2px}
+.tot .g{color:var(--good)}
+.tot .a{color:var(--accent)}
+@media (max-width:680px){
+  .today h2{font-size:15px}
+  .ord{padding:8px 10px}
+  .ord-l b{font-size:13.5px}
+  .ord-r b{font-size:14px}
+  .tot div{flex:1 1 45%}
+}

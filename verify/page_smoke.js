@@ -108,8 +108,8 @@ if (missing.length) {
 }
 
 // 실제로 내용이 채워졌는지 — 비어 있으면 화면이 빈 채로 뜬다
-const want = ['rebalBox', 'boRows', 'gridEntryRows', 'gridExitRows', 'checklist', 'rulesGrid',
-  'holdings', 'planRows', 'planSummary', 'planNote'];
+const want = ['todayOrders', 'todayTotals', 'rebalBox', 'boRows', 'gridEntryRows', 'gridExitRows',
+  'checklist', 'rulesGrid', 'holdings', 'planRows', 'planSummary', 'planNote'];
 const empty = want.filter((id) => !writes[id] || !els.get(id) || !els.get(id)._html.trim());
 console.log('\n  렌더된 영역:');
 want.forEach((id) => {
@@ -121,10 +121,11 @@ if (empty.length) fail++;
 // 핵심 수치가 화면에 실제로 찍혔는지
 const t = (id) => (els.get(id) ? els.get(id).textContent : '');
 console.log('\n  주요 표시값:');
-[['asOf', '기준일'], ['rsiValue', 'RSI'], ['regimePill', '레짐'], ['closeValue', '종가'],
+[['asOf', '기준일'], ['todayTitle', '오늘주문'], ['todayTag', '건수'],
+ ['rsiValue', 'RSI'], ['regimePill', '레짐'], ['closeValue', '종가'],
  ['ma50Value', 'MA50'], ['ma200Value', 'MA200'], ['allocText', '배분'], ['dirText', '방향']]
   .forEach(([id, label]) => console.log(`    ${label.padEnd(6)} ${t(id) || '(빈값)'}`));
-const blanks = ['asOf', 'rsiValue', 'closeValue', 'ma200Value', 'allocText', 'dirText']
+const blanks = ['asOf', 'todayTitle', 'todayTag', 'rsiValue', 'closeValue', 'ma200Value', 'allocText', 'dirText']
   .filter((id) => !t(id) || t(id) === '—');
 if (blanks.length) { fail++; console.log(`  [실패] 빈 표시값: ${blanks.join(', ')}`); }
 

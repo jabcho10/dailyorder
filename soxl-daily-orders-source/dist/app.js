@@ -175,6 +175,7 @@
         + esc(o.gridEntryReason || '신규 진입 없음') + '</td></tr>';
     }
 
+    renderToday(o);
     renderPlan(o, lots);
 
     $('gridExitRows').innerHTML = o.gridExits.length ? o.gridExits.map(function (x) {
@@ -246,6 +247,101 @@
 
     renderFresh();
     store(LS_IN, input);
+  }
+
+  // ── 오늘 주문 (맨 위 요약) ──────────────────────────────
+  // 아침에 폰으로 보는 화면. 실제로 넣을 주문만 매수/매도로 나눠 보여준다.
+  // MOO·MOC 는 가격이 정해지지 않으므로 금액은 추정으로 표시한다.
+  function renderToday(o) {
+    var buys = [], sells = [];
+
+    // 1) 전일 돌파분 시가 청산 (§6-1)
+    if (o.liquidate) {
+      var lq = o.liquidate;
+      sells.push({
+        name: lq.ticker + ' 돌파 청산',
+        sub: '장 시작 · MOO 전량 매도',
+        price: '시가', qty: lq.qty, amount: lq.estimate, est: true
+      });
+    }
+
+    // 2) 돌파 감시주문 (§3, §4)
+    if (o.breakout && o.breakout.qty > 0) {
+      var b = o.breakout;
+      buys.push({
+        name: b.ticker + ' 돌파',
+        sub: '장 시작 · STOP-LIMIT (감시가 ' + money(b.watch) + ')',
+        price: money(b.limit), qty: b.qty,
+        amount: b.qty * b.limit * (1 + P.FEE)
+      });
+    }
+
+    // 3) 그리드 청산 — 익절 LOC / 강제 MOC (§5.5, §5.6)
+    o.gridExits.forEach(function (x) {
+      if (!(x.qty > 0)) return;
+      var moc = x.forced;
+      sells.push({
+        name: '그리드 ' + x.no + '번 ' + (moc ? '강제청산' : '익절'),
+        sub: '장 마감 · ' + (moc ? 'MOC 전량' : 'LOC') + ' · 매수가 ' + money(x.px)
+          + (moc ? ' · ' + x.elapsed + '거래일' : ' · ' + x.regime + ' +' + pct(x.tp)),
+        price: moc ? '종가' : money(x.orderLimit),
+        qty: x.qty,
+        amount: x.qty * (moc ? o.prevClose : x.orderLimit) * (1 - P.FEE),
+        est: moc, force: moc
+      });
+    });
+
+    // 4) 그리드 신규 진입 (§5.3, §5.4)
+    if (o.gridEntry && o.gridEntry.qty > 0) {
+      var g = o.gridEntry;
+      buys.push({
+        name: '그리드 ' + g.rung + '번 진입',
+        sub: '장 마감 · LOC · ' + g.regime + ' ' + pct(g.weight),
+        price: money(g.limit), qty: g.qty,
+        amount: g.qty * g.limit * (1 + P.FEE)
+      });
+    }
+
+    var row = function (x) {
+      return '<div class="ord' + (x.force ? ' force' : '') + '">'
+        + '<div class="ord-l"><b>' + esc(x.name) + '</b><span>' + esc(x.sub) + '</span></div>'
+        + '<div class="ord-r"><b>' + qty(x.qty) + '</b>'
+        + '<span>' + esc(x.price) + ' · ' + money(x.amount)
+        + (x.est ? ' <em>추정</em>' : '') + '</span></div></div>';
+    };
+    var group = function (cls, title, note, list) {
+      if (!list.length) return '';
+      return '<div class="ordgrp ' + cls + '"><h4>' + title + ' <i>' + note + '</i></h4>'
+        + list.map(row).join('') + '</div>';
+    };
+
+    var sum = function (l) { return l.reduce(function (s, x) { return s + x.amount; }, 0); };
+    var cnt = function (l) { return l.reduce(function (s, x) { return s + x.qty; }, 0); };
+
+    $('todayTitle').textContent = o.asOf + ' 종가 기준 · 다음 거래일 주문';
+    $('todayTag').textContent = (buys.length + sells.length) + '건';
+
+    if (!buys.length && !sells.length) {
+      $('todayOrders').innerHTML = '<div class="ord-none">넣을 주문이 없습니다.'
+        + (o.breakoutReason ? '<br>' + esc(o.breakoutReason) : '') + '</div>';
+      $('todayTotals').innerHTML = '';
+      return;
+    }
+
+    $('todayOrders').innerHTML =
+      group('sell', '매도', sells.length + '건', sells)
+      + group('buy', '매수', buys.length + '건', buys);
+
+    $('todayTotals').innerHTML = '<div class="tot">'
+      + '<div><span>매수 합계</span><b class="g">' + (buys.length ? money(sum(buys)) : '—') + '</b>'
+        + '<span>' + (buys.length ? cnt(buys).toLocaleString() + '주' : '주문 없음') + '</span></div>'
+      + '<div><span>매도 합계</span><b class="a">' + (sells.length ? money(sum(sells)) : '—') + '</b>'
+        + '<span>' + (sells.length ? cnt(sells).toLocaleString() + '주' : '주문 없음') + '</span></div>'
+      + '<div><span>순현금 변동</span><b>' + money(sum(sells) - sum(buys)) + '</b>'
+        + '<span>매도 − 매수</span></div>'
+      + '<div><span>주문 후 잔여현금</span><b>' + money(o.boCash + o.gridCash - sum(buys)) + '</b>'
+        + '<span>당일 매도대금 제외 (§5.8)</span></div>'
+      + '</div>';
   }
 
   // ── 7칸 사다리 계획표 ───────────────────────────────────
