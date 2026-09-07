@@ -128,6 +128,33 @@ const blanks = ['asOf', 'rsiValue', 'closeValue', 'ma200Value', 'allocText', 'di
   .filter((id) => !t(id) || t(id) === '—');
 if (blanks.length) { fail++; console.log(`  [실패] 빈 표시값: ${blanks.join(', ')}`); }
 
+// 모바일 카드 라벨이 실제 표 헤더와 맞는지
+// (컬럼이 바뀌었는데 CSS 라벨을 안 고치면 좁은 화면에서 엉뚱한 라벨이 붙는다)
+console.log('\n  모바일 컬럼 라벨:');
+{
+  const css = fs.readFileSync(path.join(DIST, 'styles.css'), 'utf8');
+  const tables = [...html.matchAll(/<thead>\s*<tr>([\s\S]*?)<\/tr>\s*<\/thead>\s*<tbody id="([^"]+)"/g)];
+  if (!tables.length) { fail++; console.log('    [실패] thead/tbody 짝을 찾지 못했습니다'); }
+  tables.forEach(([, head, id]) => {
+    const ths = [...head.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)]
+      .map((m) => m[1].replace(/<[^>]+>/g, '').trim());
+    const rules = new Map();
+    const re = new RegExp('#' + id + ' td:nth-child\\((\\d+)\\)::before\\{content:"([^"]*)"\\}', 'g');
+    for (const m of css.matchAll(re)) rules.set(+m[1], m[2]);
+    if (!rules.size) { console.log(`    (건너뜀) #${id} — 라벨 규칙 없음`); return; }
+    const bad = [];
+    ths.forEach((t, i) => {
+      const n = i + 1, want = t, got = rules.get(n);
+      if (got === undefined) { if (want) bad.push(`${n}번 라벨 없음 (헤더 "${want}")`); return; }
+      if (got !== want && !(want === '' && got === '')) bad.push(`${n}번 "${got}" != 헤더 "${want}"`);
+    });
+    [...rules.keys()].filter((n) => n > ths.length)
+      .forEach((n) => bad.push(`${n}번 라벨이 헤더(${ths.length}컬럼)를 넘음`));
+    if (bad.length) { fail++; console.log(`    [실패] #${id}: ${bad.join(', ')}`); }
+    else console.log(`    [OK]    #${id}  ${ths.length}컬럼 라벨 일치`);
+  });
+}
+
 // 자동 갱신 설정과 오프라인 폴백
 console.log('\n  자동 갱신:');
 const durl = metas['page-data-url'] || '';

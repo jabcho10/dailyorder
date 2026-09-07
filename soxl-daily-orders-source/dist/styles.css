@@ -73,7 +73,7 @@ button:hover{border-color:var(--accent);color:var(--accent)}
 /* 입력 */
 .input-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--dim)}
-label.wide{grid-column:span 2;min-width:260px}
+label.wide{grid-column:1 / -1}
 input,select{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--line);
   background:var(--panel);color:var(--ink);width:100%}
 input[type=number]{font-family:var(--mono)}
@@ -199,3 +199,91 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:16px;fl
 .datebox .mini{align-self:flex-start;margin-top:7px}
 .datebox small.live{color:var(--good)}
 .datebox small.error{color:var(--bad)}
+
+/* ──────────────────────────────────────────────────────────
+   모바일 — 표를 카드로 접는다.
+   컬럼 순서가 고정이라 nth-child 로 라벨을 붙일 수 있어
+   app.js 는 건드리지 않는다.
+   ────────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .shell{padding:14px 12px 40px;gap:12px}
+  .panel{padding:14px;border-radius:12px}
+  h1{font-size:21px}
+  h2{font-size:16px}
+  .topbar{gap:12px}
+  .datebox{width:100%;min-width:0}
+
+  /* iOS 사파리는 16px 미만 입력에 자동 확대를 건다 */
+  input,select{font-size:16px;padding:10px}
+  input.cell{font-size:15px;min-width:0;width:100%}
+
+  .card dl{grid-template-columns:1fr 1fr}
+  .filter-grid,.input-grid,.rebal,.formula,.checklist,.rules-grid,.holdings{
+    grid-template-columns:1fr}
+  .hg{grid-template-columns:1fr 1fr}
+  .plan-bar{gap:10px}
+  .plan-bar label{min-width:0;width:100%}
+
+  /* 표 -> 행 단위 카드 */
+  .table-wrap{border:none;overflow:visible;background:none}
+  table,.plan-table{min-width:0;width:100%;display:block}
+  thead{display:none}
+  tbody{display:block}
+  tr{display:block;border:1px solid var(--line);border-radius:11px;
+     padding:9px 11px;margin-bottom:8px;background:var(--bg)}
+  tr:last-child{margin-bottom:0}
+  td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+     padding:4px 0;border:none;text-align:right}
+  td::before{content:attr(data-l);color:var(--dim);font-size:11.5px;
+     text-align:left;flex:0 0 auto;white-space:nowrap}
+  td[colspan]{display:block;text-align:left}
+  td[colspan]::before{content:none}
+  td.empty{padding:16px 0}
+  td.cond{font-size:12px}
+  .st{align-self:center}
+
+  /* 컬럼별 라벨 — index.html 의 thead 순서와 같아야 한다 */
+  #boRows td:nth-child(1)::before{content:"종목"}
+  #boRows td:nth-child(2)::before{content:"주문"}
+  #boRows td:nth-child(3)::before{content:"감시가"}
+  #boRows td:nth-child(4)::before{content:"지정가"}
+  #boRows td:nth-child(5)::before{content:"수량"}
+  #boRows td:nth-child(6)::before{content:"체결 조건"}
+
+  #gridEntryRows td:nth-child(1)::before{content:"칸"}
+  #gridEntryRows td:nth-child(2)::before{content:"레짐"}
+  #gridEntryRows td:nth-child(3)::before{content:"비중"}
+  #gridEntryRows td:nth-child(4)::before{content:"주문"}
+  #gridEntryRows td:nth-child(5)::before{content:"지정가"}
+  #gridEntryRows td:nth-child(6)::before{content:"금액"}
+  #gridEntryRows td:nth-child(7)::before{content:"수량"}
+  #gridEntryRows td:nth-child(8)::before{content:"조건"}
+
+  #gridExitRows td:nth-child(1)::before{content:"칸"}
+  #gridExitRows td:nth-child(2)::before{content:"매수가"}
+  #gridExitRows td:nth-child(3)::before{content:"수량"}
+  #gridExitRows td:nth-child(4)::before{content:"레짐"}
+  #gridExitRows td:nth-child(5)::before{content:"주문"}
+  #gridExitRows td:nth-child(6)::before{content:"지정가"}
+  #gridExitRows td:nth-child(7)::before{content:"경과"}
+  #gridExitRows td:nth-child(8)::before{content:"강제청산일"}
+
+  #planRows td:nth-child(1)::before{content:"칸"}
+  #planRows td:nth-child(2)::before{content:"비중"}
+  #planRows td:nth-child(3)::before{content:"매수 지정가"}
+  #planRows td:nth-child(4)::before{content:"매수 수량"}
+  #planRows td:nth-child(5)::before{content:"매수 금액"}
+  #planRows td:nth-child(6)::before{content:"익절 목표가"}
+  #planRows td:nth-child(7)::before{content:"매도 수량"}
+  #planRows td:nth-child(8)::before{content:"매도 금액"}
+  #planRows td:nth-child(9)::before{content:"예상 손익"}
+  #planRows td:nth-child(10)::before{content:"잔여현금"}
+  /* 액션·빈칸 셀은 위치가 달라질 수 있으니 클래스로 라벨을 끈다 */
+  td.act::before,td.empty::before{content:none}
+  #planRows td.act{justify-content:flex-end;gap:6px;padding-top:8px}
+
+  /* 손가락으로 누를 수 있는 크기 */
+  .mini{padding:7px 12px;font-size:12px}
+  button{padding:9px 15px}
+  .chip{font-size:12px}
+}

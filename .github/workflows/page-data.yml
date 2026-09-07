@@ -12,9 +12,18 @@ on:
     # 다음 개장(22:30 KST)까지 16시간 여유가 있다. slippage-probe 와 같은 시각.
     - cron: "30 21 * * 1-5"
   workflow_dispatch:        # 수동 실행 버튼
+  push:
+    branches: [main]        # 코드가 바뀌면 검증 후 페이지를 다시 배포한다
+                            # (봇이 GITHUB_TOKEN 으로 만든 커밋은 워크플로를 다시 트리거하지 않는다)
 
 permissions:
   contents: write           # 갱신된 CSV·data.json 을 커밋하기 위해 필요
+  pages: write              # GitHub Pages 배포
+  id-token: write           # deploy-pages 인증
+
+concurrency:
+  group: page-data
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -85,3 +94,23 @@ jobs:
           # 변경이 없으면(휴장일 등) 커밋을 건너뛴다. 실패로 처리하지 않는다.
           git diff --staged --quiet || git commit -m "주문 페이지 데이터 $(date -u +%Y-%m-%d)"
           git push
+
+  # 검증을 통과한 dist 만 Pages 로 내보낸다.
+  # 페이지는 data.json 을 런타임에 받아가므로, 데이터만 바뀐 날에는
+  # 이 배포가 없어도 폰에서 최신 주문이 보인다.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main         # build 잡이 방금 만든 커밋까지 받아온다
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: soxl-daily-orders-source/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
