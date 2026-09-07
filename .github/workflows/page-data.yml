@@ -1,0 +1,80 @@
+# 매일 미국장 마감 후 주문 페이지 데이터를 갱신한다.
+# GitHub 서버에서 돌기 때문에 사용자 PC 는 꺼져 있어도 된다.
+#
+# 배포된 페이지는 이 워크플로가 커밋한 dist/data.json 을 raw.githubusercontent 에서
+# 직접 받아간다. 따라서 데이터만 갱신되면 페이지를 다시 배포할 필요가 없다.
+# (raw.githubusercontent 는 Access-Control-Allow-Origin: * 를 준다. 공개 저장소여야 한다.)
+name: page-data
+
+on:
+  schedule:
+    # 21:30 UTC = 미국장 마감(16:00 ET, 서머타임) 후 1시간 30분. 한국시간 06:30.
+    # 다음 개장(22:30 KST)까지 16시간 여유가 있다. slippage-probe 와 같은 시각.
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:        # 수동 실행 버튼
+
+permissions:
+  contents: write           # 갱신된 CSV·data.json 을 커밋하기 위해 필요
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 의존성 설치
+        run: pip install --quiet yfinance pandas numpy
+
+      - name: SOXL 갱신
+        # 이 CSV 가 전략 전체의 기준 거래일 캘린더다. 반드시 가장 먼저 돈다.
+        # 무결성(분할 아티팩트·과거 종가 변동)을 통과하지 못하면 여기서 실패한다.
+        run: python engine/fetch_soxl.py
+
+      - name: QQQ 주봉 레짐 갱신
+        # start=2005-01-01 고정. 이 값을 바꾸면 주봉 RSI 시드가 달라져
+        # 레짐(50)과 SOXS 게이트(45) 판정이 흔들린다. verify/period1_trap.py 참고.
+        run: python engine/regime_build.py
+
+      - name: SOXS 갱신 + 분할 보정
+        # Yahoo 는 SOXS 의 액면분할을 누락하는 일이 있다. 이 스크립트가 rL+rS≈0
+        # 성질로 자동 탐지·보정한다. 잔여 이상치가 남으면 아래 검증에서 걸린다.
+        run: python engine/fetch_soxs.py
+
+      - name: 페이지 데이터 생성
+        # 세 CSV 의 마지막 날짜가 어긋나면 여기서 실패한다.
+        run: python engine/build_page_data.py
+
+      - name: 검증 — 페이지와 백테스트 엔진이 같은 주문을 내는가
+        run: |
+          python verify/page_parity.py
+          node verify/page_parity.js
+
+      - name: 검증 — 그리드 계획표
+        run: node verify/page_ladder.js
+
+      - name: 검증 — 페이지 렌더
+        run: node verify/page_smoke.js
+
+      - name: 검증 — 독립 재구현 대조
+        run: python verify/independent.py
+
+      - name: 커밋
+        # 위 검증이 하나라도 실패하면 이 단계에 오지 못한다.
+        # 즉 틀린 데이터가 페이지로 나가지 않는다.
+        run: |
+          git config user.name  "page-data"
+          git config user.email "actions@github.com"
+          git add data/SOXL_OHLC.csv data/SOXS_OHLC.csv data/qqq_regime.csv \
+                  soxl-daily-orders-source/dist/data.js \
+                  soxl-daily-orders-source/dist/data.json
+          # 변경이 없으면(휴장일 등) 커밋을 건너뛴다. 실패로 처리하지 않는다.
+          git diff --staged --quiet || git commit -m "주문 페이지 데이터 $(date -u +%Y-%m-%d)"
+          git push

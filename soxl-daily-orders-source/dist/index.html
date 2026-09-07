@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="description" content="SOXL·SOXS 돌파 + SOXL 레짐 그리드 전략의 다음 거래일 주문표" />
+<title>SOXL·SOXS 데일리 오더</title>
+<!-- 자동 갱신: GitHub Actions 가 매일 갱신하는 data.json 위치.
+     OWNER/REPO 와 브랜치만 자기 저장소로 바꾸면 된다. 공개 저장소여야 한다.
+     비워두면 자동 갱신을 끄고 내장 data.js 만 쓴다. -->
+<meta name="page-data-url"
+      content="https://raw.githubusercontent.com/jabcho10/dailyorder/main/soxl-daily-orders-source/dist/data.json" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<main class="shell">
+
+  <div id="freshWarn"></div>
+
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">DAILY ORDER SHEET</p>
+      <h1>SOXL·SOXS 데일리 오더</h1>
+      <p class="sub">돌파 + SOXL 레짐 그리드 · 규칙 확정 2026-09-05</p>
+    </div>
+    <div class="datebox">
+      <span>기준 종가일</span><strong id="asOf">—</strong>
+      <small id="dataState">시드 데이터</small>
+      <span class="next">주문 대상일 <b id="nextDay">다음 거래일</b></span>
+      <button class="mini" id="refreshData">데이터 새로고침</button>
+    </div>
+  </header>
+
+  <!-- 01 필터 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">01 · 필터</p><h2>오늘의 판정</h2></div>
+      <button class="ghost" id="reloadSeed">시드 복원</button>
+    </div>
+    <div class="filter-grid">
+      <article class="card" id="rsiCard">
+        <div class="card-top"><span>QQQ 주봉 RSI(14, Wilder)</span><span class="pill" id="regimePill">—</span></div>
+        <strong class="metric" id="rsiValue">—</strong>
+        <div class="meter"><i id="rsiBar"></i><u class="m45"></u><u class="m50"></u></div>
+        <div class="scale"><span>0</span><span>45 · SOXS</span><span>50 · 레짐</span><span>100</span></div>
+        <p id="regimeReason">—</p>
+      </article>
+
+      <article class="card" id="maCard">
+        <div class="card-top"><span>SOXL 이동평균 배열</span><span class="pill" id="maPill">—</span></div>
+        <strong class="metric" id="closeValue">—</strong>
+        <dl>
+          <div><dt>MA50</dt><dd id="ma50Value">—</dd></div>
+          <div><dt>MA200</dt><dd id="ma200Value">—</dd></div>
+          <div><dt>목표 배분</dt><dd id="allocText">—</dd></div>
+        </dl>
+        <p id="maReason">—</p>
+      </article>
+
+      <article class="card" id="dirCard">
+        <div class="card-top"><span>돌파 방향</span><span class="pill" id="dirPill">—</span></div>
+        <strong class="metric" id="dirText">—</strong>
+        <p id="dirReason">—</p>
+        <div class="perm">
+          <div><span>SOXL 돌파</span><b id="permSoxl">—</b></div>
+          <div><span>SOXS 돌파</span><b id="permSoxs">—</b></div>
+          <div><span>SOXL 그리드</span><b id="permGrid">—</b></div>
+        </div>
+        <p class="tiny">두 종목의 자동감시주문을 동시에 내지 않는다 (§4.1)</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- 02 계좌 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">02 · 계좌 상태</p><h2>장 시작 전 입력</h2></div>
+      <button class="ghost" id="resetBtn">입력 초기화</button>
+    </div>
+
+    <div class="input-grid">
+      <label class="wide">총 가용현금 ($)
+        <input type="number" step="1" id="cash" />
+        <small>돌파 슬리브 현금 + 그리드 현금. 목표 배분은 아래에서 자동 계산합니다.</small>
+      </label>
+      <label>전일 돌파 보유
+        <select id="boTick"><option value="">없음</option><option>SOXL</option><option>SOXS</option></select>
+      </label>
+      <label>보유 수량
+        <input type="number" step="1" id="boQty" value="0" />
+      </label>
+      <label class="upload">데이터 갱신
+        <input type="file" accept=".csv" id="csvFile" multiple />
+        <span id="csvLabel">SOXL / SOXS / qqq_regime CSV 선택</span>
+      </label>
+    </div>
+
+    <div class="rebal" id="rebalBox"></div>
+  </section>
+
+  <!-- 03 돌파 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">03 · 돌파</p><h2>변동성 돌파 (1일 보유)</h2></div>
+      <span class="tag" id="boTag">—</span>
+    </div>
+    <div class="formula" id="boFormula"></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>종목</th><th>주문</th><th>감시가</th><th>지정가</th><th>수량</th><th>체결 조건</th></tr></thead>
+      <tbody id="boRows"></tbody>
+    </table></div>
+    <p class="note" id="boNote"></p>
+  </section>
+
+  <!-- 04 그리드 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">04 · 그리드</p><h2>SOXL 7칸 레짐 그리드</h2></div>
+      <span class="tag cyan" id="gridTag">—</span>
+    </div>
+
+    <div class="formula" id="gridFormula"></div>
+
+    <h3 class="sub-head">신규 진입 (하루 최대 한 칸)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>칸</th><th>레짐</th><th>비중</th><th>주문</th><th>지정가</th><th>금액</th><th>수량</th><th>조건</th></tr></thead>
+      <tbody id="gridEntryRows"></tbody>
+    </table></div>
+
+    <h3 class="sub-head">7칸 사다리 계획표</h3>
+    <div class="plan-bar">
+      <label>시작일
+        <input type="date" id="planDate" />
+        <small>이 날짜의 종가를 1번 칸 기준으로 삼습니다</small>
+      </label>
+      <label>레짐
+        <select id="planRegime">
+          <option value="AUTO">자동 (RSI 판정)</option>
+          <option value="TOP">TOP · 익절 +2.5%</option>
+          <option value="BOTTOM">BOTTOM · 익절 +1.0%</option>
+        </select>
+      </label>
+      <label>그리드 현금
+        <input type="number" step="1" id="planCash" />
+        <small>비우면 목표 배분에서 자동 계산</small>
+      </label>
+      <button class="ghost" id="planReset">수정값 되돌리기</button>
+    </div>
+    <div id="planWarn"></div>
+    <div class="plan-sum" id="planSummary"></div>
+    <div class="table-wrap"><table class="plan-table">
+      <thead><tr>
+        <th>칸</th><th>비중</th><th>매수 지정가</th><th>매수 수량</th><th>매수 금액</th>
+        <th>익절 목표가</th><th>매도 수량</th><th>매도 금액</th><th>예상 손익</th>
+        <th>잔여현금</th><th></th>
+      </tr></thead>
+      <tbody id="planRows"></tbody>
+    </table></div>
+    <p class="note" id="planNote"></p>
+
+    <h3 class="sub-head">보유 칸 청산</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>칸</th><th>매수가</th><th>수량</th><th>레짐</th><th>주문</th><th>지정가</th><th>경과</th><th>강제청산일</th></tr></thead>
+      <tbody id="gridExitRows"></tbody>
+    </table></div>
+
+    <details id="holdBox">
+      <summary>보유 칸 입력 <span>매수가 · 수량 · 매수일 · 매수 당시 레짐</span></summary>
+      <p class="tiny pad">각 칸은 <b>매수 당시 레짐과 익절률을 청산될 때까지 유지</b>합니다 (§5.1). 매수일에 판정된 레짐을 그대로 두세요.</p>
+      <div class="holdings" id="holdings"></div>
+      <div class="cycle">
+        <label>이번 사이클에서 마지막으로 매수한 칸
+          <input type="number" min="0" max="7" step="1" id="lastRung" />
+          <small>중간 칸이 먼저 청산돼도 칸 번호는 되돌아가지 않습니다 (§5.7). 전량 청산되면 자동으로 1번부터 다시 시작합니다.</small>
+        </label>
+      </div>
+    </details>
+    <p class="note">당일 청산될 매도대금은 당일 신규 매수의 재원으로 쓰지 않습니다 (§5.8). 수량은 프리장 가용현금과 LOC 지정가만으로 계산됩니다.</p>
+  </section>
+
+  <!-- 05 체크리스트 -->
+  <section class="panel">
+    <div class="section-head"><div><p class="step">05 · 실행 순서</p><h2>§6 일일 체크리스트</h2></div></div>
+    <div class="checklist" id="checklist"></div>
+  </section>
+
+  <!-- 06 규칙 -->
+  <section class="panel rules">
+    <div class="section-head"><div><p class="step">06 · 규칙</p><h2>적용 중인 매매 규칙</h2></div><span class="tag">문서 기준</span></div>
+    <div class="rules-grid" id="rulesGrid"></div>
+    <p class="note">이 값들은 <code>dist/spec.js</code> 의 파라미터를 그대로 읽어 표시합니다. <code>verify/page_parity.js</code> 가 <code>engine/strategy.py</code> 와 동일한지 대조합니다.</p>
+  </section>
+
+  <footer>
+    <span>참고용 주문표입니다. 주문 전 종목·가격·수량을 반드시 확인하세요.</span>
+    <button id="printBtn">주문표 인쇄</button>
+  </footer>
+</main>
+
+<script src="data.js"></script>
+<script src="spec.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
