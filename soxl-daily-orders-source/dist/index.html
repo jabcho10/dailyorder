@@ -106,6 +106,10 @@
         </select>
         <small>자동감시주문의 "X틱" 계산에 씁니다</small>
       </label>
+      <label>틱 입력 상한
+        <input type="number" step="1" min="1" id="maxTicks" />
+        <small>메리츠 자동감시주문은 10틱까지</small>
+      </label>
       <label class="upload">데이터 갱신
         <input type="file" accept=".csv" id="csvFile" multiple />
         <span id="csvLabel">SOXL / SOXS / qqq_regime CSV 선택</span>

@@ -16,7 +16,7 @@
   };
   var defaultInput = function () {
     return {
-      cash: 100000, boTick: '', boQty: 0, lots: blankLots(), lastRung: 0, tick: '0.01',
+      cash: 100000, boTick: '', boQty: 0, lots: blankLots(), lastRung: 0, tick: '0.01', maxTicks: 10,
       plan: { date: '', regime: 'AUTO', cash: '', edits: {} }
     };
   };
@@ -55,9 +55,16 @@
   // 올림을 쓴다 — 스펙의 지정가보다 낮아져 백테스트가 잡은 체결을 놓치는 쪽을 피한다.
   function ticksFor(watch, limit) {
     var t = parseFloat(input.tick) || 0.01;
+    var max = Math.max(1, parseInt(input.maxTicks, 10) || 10);
     var raw = (limit - watch) / t;
-    var n = Math.ceil(raw - 1e-9);
-    return { tick: t, raw: raw, n: n, price: watch + n * t };
+    var want = Math.ceil(raw - 1e-9);          // 올림 — 스펙 지정가보다 낮아지지 않게
+    var n = Math.min(want, max);               // 시스템 입력 상한
+    var price = watch + n * t;
+    return {
+      tick: t, raw: raw, want: want, n: n, max: max,
+      capped: want > max, price: price,
+      band: watch > 0 ? price / watch - 1 : 0
+    };
   }
 
   // ── 렌더 ────────────────────────────────────────────────
@@ -142,8 +149,11 @@
         + fx('지정가 L', money(b.limit), 'T × 1.001 · 갭 추격 차단')
         + (function () {
             var tk = ticksFor(b.watch, b.limit);
-            return fx('감시가 대비', '+' + tk.n + '틱',
-              '틱 $' + tk.tick + ' · 정확히는 ' + tk.raw.toFixed(2) + '틱 → 올림 · 주문가 ' + money(tk.price));
+            return fx('감시가 대비', '+' + tk.n + '틱' + (tk.capped ? ' (상한)' : ''),
+              tk.capped
+                ? '스펙은 ' + tk.want + '틱이지만 입력 상한 ' + tk.max + '틱 · 주문가 ' + money(tk.price)
+                  + ' · 실효 밴드 ' + (tk.band * 100).toFixed(3) + '%'
+                : '틱 $' + tk.tick + ' · ' + tk.raw.toFixed(2) + '틱 → 올림 · 주문가 ' + money(tk.price));
           })()
         + fx('주문 수량', qty(b.qty), '투입한도 ' + money(b.budget) + ' ÷ (L × 1.001), 정수 내림')
         + (b.capped ? fx('20% 상한 적용', money(b.cap), '전체자산의 20% 로 SOXS 투입을 제한 (§4.3)') : '');
@@ -154,7 +164,8 @@
         + '<td class="cond">고가 ≥ T <b>그리고</b> (시가 ≤ L <b>또는</b> 저가 ≤ L)</td></tr>'
         + '<tr class="dim"><td>' + esc(b.ticker) + '</td><td>' + badge('MOO 매도', 'sell') + '</td>'
         + '<td class="num">—</td><td class="num">다음 거래일 시가</td><td class="num">보유 전량</td>'
-        + '<td class="cond">체결 시 손익과 무관하게 다음 거래일 시가 청산 (§3.5)</td></tr>';
+        + '<td class="cond">체결 시 손익과 무관하게 다음 거래일 시가 청산 (§3.5). '
+        + '<b>LOO 가 아니라 MOO</b> — LOO 는 갭 하락 시 미체결로 남는다.</td></tr>';
       $('boNote').innerHTML = b.ticker === 'SOXS'
         ? '기준봉 ' + esc(r.date) + ' SOXS 고 ' + money(r.h) + ' / 저 ' + money(r.l) + ' / 종 ' + money(r.c)
           + ' · <b>SOXS 조정가 주의</b>: 과거 역분할이 반영된 계열이므로 최근 구간만 현재 호가와 일치합니다 (§11-4).'
@@ -285,7 +296,11 @@
       var b = o.breakout;
       buys.push({
         name: b.ticker + ' 돌파',
-        sub: '장 시작 · 자동감시 ' + money(b.watch) + ' → 지정가 매수 (+' + ticksFor(b.watch, b.limit).n + '틱)',
+        sub: (function () {
+          var tk = ticksFor(b.watch, b.limit);
+          return '장 시작 · 자동감시 ' + money(b.watch) + ' → 지정가 매수 +' + tk.n + '틱'
+            + (tk.capped ? ' (상한 · 실효 ' + (tk.band * 100).toFixed(3) + '%)' : '');
+        })(),
         price: money(b.limit), qty: b.qty,
         amount: b.qty * b.limit * (1 + P.FEE)
       });
@@ -330,13 +345,23 @@
         + list.map(row).join('') + '</div>';
     };
 
+    // 오늘 낼 주문은 아니지만, 체결되면 내일 반드시 해야 하는 것 (§3.5)
+    var pending = [];
+    if (o.breakout && o.breakout.qty > 0) {
+      pending.push({
+        name: o.breakout.ticker + ' 돌파 청산',
+        sub: '위 매수가 체결된 경우에만 · 다음 거래일 장 시작',
+        order: 'MOO 전량 매도', qty: o.breakout.qty
+      });
+    }
+
     var sum = function (l) { return l.reduce(function (s, x) { return s + x.amount; }, 0); };
     var cnt = function (l) { return l.reduce(function (s, x) { return s + x.qty; }, 0); };
 
     $('todayTitle').textContent = o.asOf + ' 종가 기준 · 다음 거래일 주문';
     $('todayTag').textContent = (buys.length + sells.length) + '건';
 
-    if (!buys.length && !sells.length) {
+    if (!buys.length && !sells.length && !pending.length) {
       $('todayOrders').innerHTML = '<div class="ord-none">넣을 주문이 없습니다.'
         + (o.breakoutReason ? '<br>' + esc(o.breakoutReason) : '') + '</div>';
       $('todayTotals').innerHTML = '';
@@ -345,7 +370,16 @@
 
     $('todayOrders').innerHTML =
       group('sell', '매도', sells.length + '건', sells)
-      + group('buy', '매수', buys.length + '건', buys);
+      + group('buy', '매수', buys.length + '건', buys)
+      + (pending.length
+        ? '<div class="ordgrp pend"><h4>내일 예정 <i>오늘 넣는 주문 아님</i></h4>'
+          + pending.map(function (x) {
+              return '<div class="ord"><div class="ord-l"><b>' + esc(x.name) + '</b>'
+                + '<span>' + esc(x.sub) + '</span></div>'
+                + '<div class="ord-r"><b>' + qty(x.qty) + '</b>'
+                + '<span>' + esc(x.order) + '</span></div></div>';
+            }).join('') + '</div>'
+        : '');
 
     $('todayTotals').innerHTML = '<div class="tot">'
       + '<div><span>매수 합계</span><b class="g">' + (buys.length ? money(sum(buys)) : '—') + '</b>'
@@ -588,6 +622,7 @@
 
   // ── 이벤트 ─────────────────────────────────────────────
   $('tickSize').addEventListener('change', function (e) { input.tick = e.target.value; render(); });
+  $('maxTicks').addEventListener('input', function (e) { input.maxTicks = e.target.value; render(); });
   ['cash', 'boQty', 'lastRung'].forEach(function (id) {
     $(id).addEventListener('input', function (e) { input[id] = e.target.value; render(); });
   });
@@ -632,6 +667,7 @@
     $('boQty').value = input.boQty;
     $('lastRung').value = input.lastRung;
     $('tickSize').value = input.tick || '0.01';
+    $('maxTicks').value = input.maxTicks || 10;
     // 시작일을 직접 고정하지 않았으면 항상 최신 봉을 따라간다
     var bars = data.soxl, newest = bars[bars.length - 1][0];
     if (!input.plan.pinned || !input.plan.date) input.plan.date = newest;

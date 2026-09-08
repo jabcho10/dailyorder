@@ -329,3 +329,7 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:16px;fl
   .ord-r b{font-size:14px}
   .tot div{flex:1 1 45%}
 }
+
+/* 내일 예정 — 오늘 낼 주문과 구분 */
+.pend h4{color:var(--dim)}
+.pend .ord{border-style:dashed;border-left-style:dashed;border-left-color:var(--dim);opacity:.85}
