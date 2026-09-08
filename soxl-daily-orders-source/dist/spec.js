@@ -223,6 +223,66 @@
   }
 
   /**
+   * 어제 낸 돌파 감시주문이 체결됐는지 판정한다 (§3.4).
+   *
+   * 마지막 봉(= 어제 장)의 OHLC 만 있으면 결정된다. 주문 자체는 그 전날 종가로
+   * 확정됐고, 체결 규칙에 재량이 없기 때문이다. 따라서 사용자가 "체결됐나"를
+   * 판단할 필요가 없다 — 데이터가 이미 답을 갖고 있다.
+   *
+   * 수량은 알 수 없다. 어제 아침의 돌파 슬리브 현금에 달려 있고 그 값은
+   * 지금 남아 있지 않다. 그래서 종목·체결가까지만 돌려주고 수량은 사용자가 넣는다.
+   */
+  function lastFill(input) {
+    var soxl = input.soxl || [], soxs = input.soxs || [];
+    var n = soxl.length;
+    if (n < P.MA_LEN + 2) return { known: false, reason: '봉이 부족합니다.' };
+
+    var cur = soxl[n - 1], prev = soxl[n - 2];          // cur = 어제 장, prev = 그 전날
+    var ma = sma(soxl.slice(0, n - 1), P.MA_LEN);       // prev 까지의 MA200
+    if (ma == null) return { known: false, reason: 'MA200 을 계산할 수 없습니다.' };
+
+    var rsi = input.rsi;
+    var dir = null;
+    if (prev[4] > ma) dir = 'SOXL';
+    else if (rsi != null && rsi <= P.BOS_RSI) dir = 'SOXS';
+    if (!dir) {
+      return { known: true, date: cur[0], direction: null, filled: false,
+               reason: '어제는 돌파 주문 자체가 없었습니다.' };
+    }
+
+    var k = dir === 'SOXL' ? P.BO_K : P.BOS_K;
+    var band = dir === 'SOXL' ? P.BO_BAND : P.BOS_BAND;
+    var pb, cb;
+    if (dir === 'SOXL') { pb = prev; cb = cur; }
+    else {
+      var m = soxs.length - soxl.length;                // SOXS 를 같은 날짜에 맞춘다
+      pb = soxs[n - 2 + m]; cb = soxs[n - 1 + m];
+      if (!pb || !cb || pb[0] !== prev[0] || cb[0] !== cur[0]) {
+        return { known: false, reason: 'SOXS 봉을 맞출 수 없습니다.' };
+      }
+    }
+
+    var T = pb[4] + k * (pb[2] - pb[3]);
+    var L = T * (1 + band);
+    var out = { known: true, date: cur[0], direction: dir, watch: T, limit: L,
+                bar: { o: cb[1], h: cb[2], l: cb[3], c: cb[4] } };
+
+    if (cb[2] <= T) {
+      out.filled = false; out.reason = '고가 ' + cb[2].toFixed(2) + ' 가 감시가에 못 미쳤습니다.';
+      return out;
+    }
+    if (cb[1] >= T) {                                   // 갭으로 감시가 위에서 출발
+      if (cb[1] <= L) { out.filled = true; out.price = cb[1]; out.how = '갭 시가 체결'; return out; }
+      if (cb[3] <= L) { out.filled = true; out.price = L;     out.how = '갭 후 되돌아와 지정가 체결'; return out; }
+      out.filled = false;
+      out.reason = '갭 시가 ' + cb[1].toFixed(2) + ' 가 지정가를 넘고 되돌아오지 않았습니다.';
+      return out;
+    }
+    out.filled = true; out.price = L; out.how = '장중 돌파 · 지정가 체결';
+    return out;
+  }
+
+  /**
    * 7칸 사다리 계획표 (§5.3~5.5).
    *
    * "각 칸이 자기 지정가에 그대로 체결된다"는 가정 아래 1~7번 칸의
@@ -353,6 +413,6 @@
 
   root.SPEC = {
     P: P, sma: sma, targetWeight: targetWeight, calendar: calendar,
-    computeOrders: computeOrders, projectLadder: projectLadder
+    computeOrders: computeOrders, projectLadder: projectLadder, lastFill: lastFill
   };
 })(typeof window !== 'undefined' ? window : globalThis);

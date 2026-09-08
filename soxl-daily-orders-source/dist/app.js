@@ -201,7 +201,9 @@
         + esc(o.gridEntryReason || '신규 진입 없음') + '</td></tr>';
     }
 
-    renderToday(o);
+    var fill = SPEC.lastFill({ soxl: data.soxl, soxs: data.soxs, rsi: data.qqq && data.qqq.rsi });
+    renderFill(fill);
+    renderToday(o, fill);
     renderPlan(o, lots);
 
     $('gridExitRows').innerHTML = o.gridExits.length ? o.gridExits.map(function (x) {
@@ -278,10 +280,18 @@
   // ── 오늘 주문 (맨 위 요약) ──────────────────────────────
   // 아침에 폰으로 보는 화면. 실제로 넣을 주문만 매수/매도로 나눠 보여준다.
   // MOO·MOC 는 가격이 정해지지 않으므로 금액은 추정으로 표시한다.
-  function renderToday(o) {
+  function renderToday(o, fill) {
     var buys = [], sells = [];
 
     // 1) 전일 돌파분 시가 청산 (§6-1)
+    // 체결은 어제 봉으로 판정된다. 수량만 사용자가 넣는다.
+    if (fill && fill.filled && !o.liquidate) {
+      sells.push({
+        name: fill.direction + ' 돌파 청산',
+        sub: '어제 ' + money(fill.price) + ' 체결 확인됨 · 보유 수량을 입력하세요',
+        price: '시가', qty: NaN, amount: NaN, est: true, need: true
+      });
+    }
     if (o.liquidate) {
       var lq = o.liquidate;
       sells.push({
@@ -333,11 +343,11 @@
     }
 
     var row = function (x) {
-      return '<div class="ord' + (x.force ? ' force' : '') + '">'
+      return '<div class="ord' + (x.force ? ' force' : '') + (x.need ? ' need' : '') + '">'
         + '<div class="ord-l"><b>' + esc(x.name) + '</b><span>' + esc(x.sub) + '</span></div>'
-        + '<div class="ord-r"><b>' + qty(x.qty) + '</b>'
-        + '<span>' + esc(x.price) + ' · ' + money(x.amount)
-        + (x.est ? ' <em>추정</em>' : '') + '</span></div></div>';
+        + '<div class="ord-r"><b>' + (x.need ? '수량 미입력' : qty(x.qty)) + '</b>'
+        + '<span>' + esc(x.price) + (x.need ? '' : ' · ' + money(x.amount))
+        + (x.est && !x.need ? ' <em>추정</em>' : '') + '</span></div></div>';
     };
     var group = function (cls, title, note, list) {
       if (!list.length) return '';
@@ -355,8 +365,9 @@
       });
     }
 
-    var sum = function (l) { return l.reduce(function (s, x) { return s + x.amount; }, 0); };
-    var cnt = function (l) { return l.reduce(function (s, x) { return s + x.qty; }, 0); };
+    var num = function (l) { return l.filter(function (x) { return Number.isFinite(x.amount); }); };
+    var sum = function (l) { return num(l).reduce(function (s, x) { return s + x.amount; }, 0); };
+    var cnt = function (l) { return num(l).reduce(function (s, x) { return s + x.qty; }, 0); };
 
     $('todayTitle').textContent = o.asOf + ' 종가 기준 · 다음 거래일 주문';
     $('todayTag').textContent = (buys.length + sells.length) + '건';
@@ -390,6 +401,38 @@
         + '<span>매도 − 매수</span></div>'
       + '<div><span>주문 후 잔여현금</span><b>' + money(o.boCash + o.gridCash - sum(buys)) + '</b>'
         + '<span>당일 매도대금 제외 (§5.8)</span></div>'
+      + '</div>';
+  }
+
+  // ── 어제 돌파 체결 판정 ─────────────────────────────────
+  function renderFill(f) {
+    if (!f || !f.known) {
+      $('fillCheck').innerHTML = '<div class="fillbox">어제 체결 판정 불가 — '
+        + esc((f && f.reason) || '데이터 부족') + '</div>';
+      return;
+    }
+    if (!f.direction) {
+      $('fillCheck').innerHTML = '<div class="fillbox">어제(<b>' + esc(f.date)
+        + '</b>)는 돌파 주문이 없었습니다. 청산할 것이 없습니다.</div>';
+      return;
+    }
+    var entered = Number(input.boQty) || 0;
+    if (!f.filled) {
+      $('fillCheck').innerHTML = '<div class="fillbox">어제(<b>' + esc(f.date) + '</b>) '
+        + esc(f.direction) + ' 돌파 <b>미체결</b> — ' + esc(f.reason)
+        + (entered > 0 ? ' <em>보유 수량이 ' + entered + '주로 입력돼 있습니다. 확인하세요.</em>' : '')
+        + '</div>';
+      return;
+    }
+    $('fillCheck').innerHTML = '<div class="fillbox hit">'
+      + '어제(<b>' + esc(f.date) + '</b>) <b>' + esc(f.direction) + ' 돌파 체결</b> · '
+      + money(f.price) + ' · ' + esc(f.how)
+      + '<br>감시가 ' + money(f.watch) + ' / 지정가 ' + money(f.limit)
+      + ' · 당일 시 ' + money(f.bar.o) + ' 고 ' + money(f.bar.h) + ' 저 ' + money(f.bar.l)
+      + (entered > 0
+        ? '<br>보유 <b>' + entered + '주</b> 입력됨 → 오늘 시가 MOO 전량 매도'
+        : '<br><b>아래에 보유 종목과 수량을 입력하세요.</b> 오늘 시가에 MOO 전량 매도해야 합니다.'
+          + ' <button class="mini" id="fillApply">' + esc(f.direction) + ' 로 설정</button>')
       + '</div>';
   }
 
@@ -638,6 +681,12 @@
     input.plan.edits = {}; delete input.plan.editedAt; render();
   };
   // 경고 배너 버튼 — 매 렌더마다 새로 그려지므로 컨테이너에 위임한다
+  $('fillCheck').addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'fillApply') {
+      var f = SPEC.lastFill({ soxl: data.soxl, soxs: data.soxs, rsi: data.qqq && data.qqq.rsi });
+      if (f && f.filled) { input.boTick = f.direction; syncInputs(); render(); }
+    }
+  });
   $('planWarn').addEventListener('click', function (e) {
     var id = e.target && e.target.id;
     if (id === 'planLatest') {
