@@ -76,6 +76,11 @@ jobs:
       - name: 검증 — 그리드 계획표
         run: node verify/page_ladder.js
 
+      - name: 검증 — 하루치 정산
+        run: |
+          python verify/page_settle.py
+          node verify/page_settle.js
+
       - name: 검증 — 페이지 렌더
         run: node verify/page_smoke.js
 

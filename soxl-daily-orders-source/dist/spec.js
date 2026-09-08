@@ -283,6 +283,121 @@
   }
 
   /**
+   * 하루치 정산 — 마지막 봉의 장에서 무슨 일이 있었어야 하는지 계산한다.
+   *
+   * 그리드는 진입·청산이 모두 종가로 판정되므로(§5.3, §5.5, §5.6) 재량이 없다.
+   * 돌파도 체결 규칙(§3.4)에 재량이 없다. 따라서 "어제 무엇이 체결됐나" 는
+   * 데이터로 결정되고, 사용자가 매일 입력할 이유가 없다.
+   *
+   * 단, 이것은 **규칙대로라면 이랬어야 한다** 는 제안이다. 부분체결·수동 개입·
+   * 현금 차이는 알 수 없으므로 적용 전에 사람이 확인해야 한다.
+   *
+   * input 은 "정산할 장에 들어가기 직전" 의 상태여야 한다.
+   */
+  function settleDay(input) {
+    var soxl = input.soxl || [], soxs = input.soxs || [];
+    var n = soxl.length, m = soxs.length;
+    if (n < P.MA_LEN + 2) return { ok: false, reason: '봉이 부족합니다.' };
+
+    var hist = soxl.slice(0, n - 1), histS = soxs.slice(0, m - 1);
+    var bar = soxl[n - 1], barS = soxs[m - 1];
+    if (!bar) return { ok: false, reason: '정산할 봉이 없습니다.' };
+
+    // 그 아침에 페이지가 내놓았을 주문
+    var o = computeOrders({
+      soxl: hist, soxs: histS, rsi: input.rsi, cash: input.cash,
+      boHold: input.boHold, lots: input.lots, lastRung: input.lastRung
+    });
+    if (o.error) return { ok: false, reason: o.error };
+
+    var close = bar[4];
+    var lots = (input.lots || []).map(function (x) {
+      return { no: x.no, px: Number(x.px), qty: Number(x.qty), date: x.date, regime: x.regime };
+    }).sort(function (a, b) { return a.no - b.no; });
+    var events = [];
+    var cash = Number(input.cash) || 0;
+
+    // ── 1) 장 시작: 전일 돌파분 MOO 청산 (실제 시가로)
+    var hold = input.boHold || {};
+    var hq = Number(hold.qty) || 0;
+    if (hq > 0 && hold.ticker) {
+      var op = hold.ticker === 'SOXS' ? (barS ? barS[1] : null) : bar[1];
+      if (op != null) {
+        var got = hq * op * (1 - P.FEE);
+        cash += got;
+        events.push({ kind: 'bo-exit', label: hold.ticker + ' 돌파 청산',
+          detail: 'MOO · 시가 ' + op.toFixed(2), qty: hq, price: op, amount: got, sign: +1 });
+      }
+    }
+
+    // ── 2) 돌파 진입 — 체결 판정은 lastFill 과 같은 규칙 (§3.4)
+    var boOut = { ticker: null, qty: 0 };
+    if (o.breakout && o.breakout.qty > 0) {
+      var b = o.breakout;
+      var cb = b.ticker === 'SOXS' ? barS : bar;
+      var T = b.watch, L = b.limit, fill = null, how = '';
+      if (cb && cb[2] > T) {
+        if (cb[1] >= T) {
+          if (cb[1] <= L) { fill = cb[1]; how = '갭 시가 체결'; }
+          else if (cb[3] <= L) { fill = L; how = '갭 후 되돌아와 지정가 체결'; }
+        } else { fill = L; how = '장중 돌파 · 지정가 체결'; }
+      }
+      if (fill != null) {
+        var spend = b.qty * fill * (1 + P.FEE);
+        cash -= spend;
+        boOut = { ticker: b.ticker, qty: b.qty };
+        events.push({ kind: 'bo-entry', label: b.ticker + ' 돌파 매수',
+          detail: how, qty: b.qty, price: fill, amount: spend, sign: -1 });
+      } else {
+        events.push({ kind: 'bo-none', label: b.ticker + ' 돌파 미체결',
+          detail: cb && cb[2] <= T ? '고가가 감시가 미달' : '갭이 지정가 초과', sign: 0 });
+      }
+    }
+
+    // ── 3) 장 마감: 그리드 신규 매수 (프리장 현금 기준, §5.8)
+    var lastRung = Number(input.lastRung) || 0;
+    if (o.gridEntry && o.gridEntry.qty > 0 && close <= o.gridEntry.limit) {
+      var g = o.gridEntry, gs = g.qty * close * (1 + P.FEE);
+      cash -= gs;
+      lots.push({ no: g.rung, px: close, qty: g.qty, date: bar[0], regime: g.regime });
+      lastRung = g.rung;
+      events.push({ kind: 'grid-buy', label: '그리드 ' + g.rung + '번 매수',
+        detail: 'LOC · 지정가 ' + g.limit.toFixed(2) + ' 이하 · 종가 체결',
+        qty: g.qty, price: close, amount: gs, sign: -1 });
+    } else if (o.gridEntry && o.gridEntry.qty > 0) {
+      events.push({ kind: 'grid-none', label: '그리드 ' + o.gridEntry.rung + '번 미체결',
+        detail: '종가 ' + close.toFixed(2) + ' > 지정가 ' + o.gridEntry.limit.toFixed(2), sign: 0 });
+    }
+
+    // ── 4) 장 마감: 보유 칸 청산 (익절 우선, §5.6)
+    var keep = [];
+    lots.forEach(function (x) {
+      if (x.date === bar[0]) { keep.push(x); return; }      // 오늘 산 칸은 대상 아님
+      var ex = (o.gridExits || []).filter(function (e) { return e.no === x.no; })[0];
+      var tp = P.TP[x.regime === 'BOTTOM' ? 'BOTTOM' : 'TOP'];
+      var tpHit = close >= x.px * (1 + tp);
+      var forced = ex ? ex.forced : false;
+      if (tpHit || forced) {
+        var proceeds = x.qty * close * (1 - P.FEE);
+        cash += proceeds;
+        events.push({ kind: tpHit ? 'grid-tp' : 'grid-moc',
+          label: '그리드 ' + x.no + '번 ' + (tpHit ? '익절' : '강제청산'),
+          detail: (tpHit ? 'LOC · +' + (tp * 100).toFixed(1) + '%' : 'MOC · ' + P.MAX_DAYS + '거래일')
+            + ' · 매수가 ' + x.px.toFixed(2),
+          qty: x.qty, price: close, amount: proceeds, sign: +1,
+          pnl: x.qty * close * (1 - P.FEE) - x.qty * x.px * (1 + P.FEE) });
+      } else keep.push(x);
+    });
+    if (!keep.length) lastRung = 0;                          // §5.7 사이클 리셋
+
+    return {
+      ok: true, date: bar[0], close: close, events: events,
+      next: { cash: cash, lots: keep, lastRung: lastRung, boHold: boOut },
+      orders: o
+    };
+  }
+
+  /**
    * 7칸 사다리 계획표 (§5.3~5.5).
    *
    * "각 칸이 자기 지정가에 그대로 체결된다"는 가정 아래 1~7번 칸의
@@ -413,6 +528,7 @@
 
   root.SPEC = {
     P: P, sma: sma, targetWeight: targetWeight, calendar: calendar,
-    computeOrders: computeOrders, projectLadder: projectLadder, lastFill: lastFill
+    computeOrders: computeOrders, projectLadder: projectLadder,
+    lastFill: lastFill, settleDay: settleDay
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -17,6 +17,7 @@
   var defaultInput = function () {
     return {
       cash: 100000, boTick: '', boQty: 0, lots: blankLots(), lastRung: 0, tick: '0.01', maxTicks: 10,
+      settledThrough: '',
       plan: { date: '', regime: 'AUTO', cash: '', edits: {} }
     };
   };
@@ -201,6 +202,7 @@
         + esc(o.gridEntryReason || '신규 진입 없음') + '</td></tr>';
     }
 
+    renderSettle();
     var fill = SPEC.lastFill({ soxl: data.soxl, soxs: data.soxs, rsi: data.qqq && data.qqq.rsi });
     renderFill(fill);
     renderToday(o, fill);
@@ -402,6 +404,80 @@
       + '<div><span>주문 후 잔여현금</span><b>' + money(o.boCash + o.gridCash - sum(buys)) + '</b>'
         + '<span>당일 매도대금 제외 (§5.8)</span></div>'
       + '</div>';
+  }
+
+  // ── 어제 장 정산 ────────────────────────────────────────
+  // 그리드는 진입·청산이 모두 종가로 판정되고(§5.3/§5.5/§5.6) 돌파도 체결 규칙에
+  // 재량이 없다(§3.4). 그래서 "어제 무엇이 체결됐나" 는 데이터로 결정된다.
+  // 규칙대로의 결과를 제안하고, 사람이 확인해서 반영한다.
+  function settleInput() {
+    return {
+      soxl: data.soxl, soxs: data.soxs, rsi: data.qqq && data.qqq.rsi,
+      cash: Number(input.cash) || 0,
+      boHold: { ticker: input.boTick || null, qty: Number(input.boQty) || 0 },
+      lots: input.lots.map(function (h, i) {
+        return { no: i + 1, px: parseFloat(h.px), qty: parseFloat(h.qty),
+                 date: h.date, regime: h.regime, held: h.held };
+      }).filter(function (h) { return h.held && h.px > 0 && h.qty > 0; }),
+      lastRung: Number(input.lastRung) || 0
+    };
+  }
+
+  function renderSettle() {
+    var last = data.soxl[data.soxl.length - 1][0];
+    if (input.settledThrough === last) {
+      $('settleBox').innerHTML = '<div class="fillbox"><b>' + esc(last)
+        + '</b> 장까지 반영 완료. 아래 보유 상태는 오늘 아침 기준입니다.</div>';
+      return;
+    }
+    var r = SPEC.settleDay(settleInput());
+    if (!r.ok) {
+      $('settleBox').innerHTML = '<div class="fillbox">정산 불가 — ' + esc(r.reason) + '</div>';
+      return;
+    }
+    var moved = r.events.filter(function (e) { return e.sign !== 0; });
+    if (!moved.length) {
+      $('settleBox').innerHTML = '<div class="fillbox"><b>' + esc(r.date)
+        + '</b> 장 — 체결 없음. 상태 변화가 없습니다.'
+        + ' <button class="mini" id="settleApply">반영 완료로 표시</button></div>';
+      return;
+    }
+    var cashDelta = r.next.cash - (Number(input.cash) || 0);
+    $('settleBox').innerHTML = '<div class="fillbox hit">'
+      + '<b>' + esc(r.date) + '</b> 장 정산 제안 — 규칙대로라면 아래가 체결됐습니다.'
+      + '<div class="stl">' + moved.map(function (e) {
+          return '<div class="stl-row"><span class="' + (e.sign > 0 ? 'up' : 'down') + '">'
+            + (e.sign > 0 ? '매도' : '매수') + '</span>'
+            + '<b>' + esc(e.label) + '</b>'
+            + '<i>' + esc(e.detail) + '</i>'
+            + '<u>' + qty(e.qty) + ' @ ' + money(e.price) + '</u></div>';
+        }).join('') + '</div>'
+      + '현금 ' + money(Number(input.cash) || 0) + ' → <b>' + money(r.next.cash) + '</b>'
+      + ' (' + (cashDelta >= 0 ? '+' : '') + money(cashDelta) + ')'
+      + ' · 보유 ' + r.next.lots.length + '칸'
+      + (r.next.boHold.qty ? ' · 돌파 ' + esc(r.next.boHold.ticker) + ' ' + r.next.boHold.qty + '주' : '')
+      + '<br><button class="mini" id="settleApply">이대로 반영</button>'
+      + ' <span class="tiny">실제와 다르면 반영 후 아래에서 수정하세요.</span>'
+      + '</div>';
+  }
+
+  function applySettle() {
+    var last = data.soxl[data.soxl.length - 1][0];
+    var r = SPEC.settleDay(settleInput());
+    if (r.ok) {
+      input.cash = Math.round(r.next.cash * 100) / 100;
+      input.lastRung = r.next.lastRung;
+      input.boTick = r.next.boHold.qty ? r.next.boHold.ticker : '';
+      input.boQty = r.next.boHold.qty || 0;
+      var fresh = blankLots();
+      r.next.lots.forEach(function (l) {
+        fresh[l.no - 1] = { held: true, px: String(Math.round(l.px * 100) / 100),
+          qty: String(l.qty), date: l.date, regime: l.regime };
+      });
+      input.lots = fresh;
+    }
+    input.settledThrough = last;
+    syncInputs(); renderHoldings(); render();
   }
 
   // ── 어제 돌파 체결 판정 ─────────────────────────────────
@@ -681,6 +757,9 @@
     input.plan.edits = {}; delete input.plan.editedAt; render();
   };
   // 경고 배너 버튼 — 매 렌더마다 새로 그려지므로 컨테이너에 위임한다
+  $('settleBox').addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'settleApply') applySettle();
+  });
   $('fillCheck').addEventListener('click', function (e) {
     if (e.target && e.target.id === 'fillApply') {
       var f = SPEC.lastFill({ soxl: data.soxl, soxs: data.soxs, rsi: data.qqq && data.qqq.rsi });
