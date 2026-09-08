@@ -81,8 +81,22 @@ jobs:
           python verify/page_settle.py
           node verify/page_settle.js
 
+      - name: 검증 — 백테스트 페이지가 백테스트 엔진과 같은가
+        # 백테스트 페이지는 CSV 전체를 브라우저에서 다시 돌린다.
+        # 그 결과가 engine/strategy.py 와 어긋나면 여기서 실패한다.
+        run: |
+          python verify/page_backtest.py
+          node verify/page_backtest.js
+
       - name: 검증 — 페이지 렌더
-        run: node verify/page_smoke.js
+        run: |
+          node verify/page_smoke.js
+          node verify/page_backtest_smoke.js
+
+      - name: 검증 — 백테스트 페이지 상호작용
+        # 첫 화면만 맞고 프리셋·기간 변경 뒤가 틀리는 경우를 막는다.
+        # 리스너를 실제로 발사해 바뀐 화면의 수치까지 파이썬 기대값과 대조한다.
+        run: node verify/page_backtest_interact.js
 
       - name: 검증 — 독립 재구현 대조
         run: python verify/independent.py

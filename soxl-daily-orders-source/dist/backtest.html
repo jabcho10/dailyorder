@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="description" content="SOXL·SOXS 돌파 + SOXL 레짐 그리드 전략의 기간별 백테스트" />
+<title>SOXL·SOXS 백테스트</title>
+<!-- 원본 CSV 위치. 주문 페이지의 page-data-url 과 같은 저장소의 data/ 폴더다.
+     OWNER/REPO 와 브랜치만 자기 저장소로 바꾸면 된다. 공개 저장소여야 한다. -->
+<meta name="csv-base-url"
+      content="https://raw.githubusercontent.com/jabcho10/dailyorder/main/data/" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="backtest.css" />
+</head>
+<body>
+<main class="shell">
+
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">BACKTEST</p>
+      <h1>SOXL·SOXS 백테스트</h1>
+      <p class="sub">돌파 + SOXL 레짐 그리드 · 규칙 확정 2026-09-05 · <a href="index.html">오늘 주문표 →</a></p>
+    </div>
+    <div class="datebox">
+      <span>데이터 구간</span><strong id="dataRange">—</strong>
+      <small id="dataState">CSV 를 불러오는 중…</small>
+      <button class="mini" id="reloadCsv">데이터 다시 받기</button>
+    </div>
+  </header>
+
+  <div id="loadWarn"></div>
+
+  <!-- 01 기간 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">01 · 기간</p><h2>백테스트 구간 설정</h2></div>
+      <span class="tag" id="rangeTag">—</span>
+    </div>
+
+    <div class="preset" id="presets">
+      <button data-preset="all">전체</button>
+      <button data-preset="2016">2016~</button>
+      <button data-preset="y10">최근 10년</button>
+      <button data-preset="y5">최근 5년</button>
+      <button data-preset="y3">최근 3년</button>
+      <button data-preset="y1">최근 1년</button>
+      <button data-preset="ytd">올해</button>
+    </div>
+
+    <div class="input-grid">
+      <label>시작일
+        <input type="date" id="fromDate" />
+        <small>이 날짜 이상인 첫 거래일부터 매매합니다</small>
+      </label>
+      <label>종료일
+        <input type="date" id="toDate" />
+        <small>이 날짜 이하인 마지막 거래일까지</small>
+      </label>
+      <label>초기 자본 ($)
+        <input type="number" step="1000" min="1000" id="initCash" value="100000" />
+        <small>구간 첫날 아침의 총 자산</small>
+      </label>
+      <label>배분
+        <select id="allocMode">
+          <option value="dyn">동적 · 정배열 30:70 / 그 외 20:80</option>
+          <option value="w20">고정 20:80</option>
+          <option value="w30">고정 30:70</option>
+          <option value="grid">그리드 단독 (돌파 0%)</option>
+          <option value="bo">돌파 단독 (그리드 0%)</option>
+        </select>
+        <small>동적이 확정 전략입니다</small>
+      </label>
+      <label class="chk2">
+        <span>SOXS 돌파</span>
+        <span class="switch"><input type="checkbox" id="bosOn" checked /><i>사용 (SOXL 이 MA200 아래이고 RSI ≤ 45 인 날)</i></span>
+      </label>
+      <label class="chk2">
+        <span>비교군</span>
+        <span class="switch"><input type="checkbox" id="cmpBH" checked /><i>Buy &amp; Hold (SOXL)</i></span>
+        <span class="switch"><input type="checkbox" id="cmpAlt" /><i id="cmpAltLabel">그리드 단독</i></span>
+      </label>
+    </div>
+    <p class="note" id="warmNote"></p>
+  </section>
+
+  <!-- 02 성과 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">02 · 성과</p><h2 id="perfTitle">—</h2></div>
+      <span class="tag cyan" id="perfTag">—</span>
+    </div>
+    <div class="stat-row" id="statRow"></div>
+    <p class="note" id="perfNote"></p>
+  </section>
+
+  <!-- 03 자산곡선 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">03 · 자산곡선</p><h2>자산 추이와 낙폭</h2></div>
+      <div class="seg" id="scaleSeg">
+        <button data-scale="log" class="on">로그</button>
+        <button data-scale="lin">선형</button>
+      </div>
+    </div>
+    <div class="legend" id="eqLegend"></div>
+    <div class="chart" id="eqChart"></div>
+    <div class="chart dd" id="ddChart"></div>
+    <p class="note">로그 축은 배수 변화를 같은 기울기로 보여줍니다. 낙폭은 그 시점까지의 최고 자산 대비 하락률입니다.</p>
+  </section>
+
+  <!-- 04 연도별 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">04 · 연도별</p><h2>연 수익률과 연내 최대낙폭</h2></div>
+      <span class="tag" id="yearTag">—</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>연도</th><th>수익률</th><th></th><th>연내 MDD</th><th>연말 자산</th></tr></thead>
+      <tbody id="yearRows"></tbody>
+    </table></div>
+    <p class="note">첫 해와 마지막 해는 구간에 걸린 만큼만 반영된 부분 연도입니다.</p>
+  </section>
+
+  <!-- 05 체결 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">05 · 체결</p><h2>슬리브별 매매 통계</h2></div>
+      <span class="tag" id="tradeTag">—</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>슬리브</th><th>청산 건수</th><th>연 환산</th><th>승률</th><th>평균 손익</th><th>최고</th><th>최저</th></tr></thead>
+      <tbody id="tradeRows"></tbody>
+    </table></div>
+    <p class="note">돌파는 1일 보유이므로 청산 건수 = 체결 건수입니다. 그리드는 칸 단위 청산입니다.</p>
+  </section>
+
+  <!-- 06 비교 -->
+  <section class="panel">
+    <div class="section-head">
+      <div><p class="step">06 · 비교</p><h2>같은 구간, 다른 구성</h2></div>
+      <span class="tag" id="cmpTag">—</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>구성</th><th>CAGR</th><th>MDD</th><th>Calmar</th><th>최대 언더워터</th><th>최종 자산</th></tr></thead>
+      <tbody id="cmpRows"></tbody>
+    </table></div>
+    <p class="note">모두 같은 구간·같은 초기 자본으로 다시 돌린 결과입니다. 표의 첫 행이 위에서 선택한 구성입니다.</p>
+  </section>
+
+  <!-- 07 주의 -->
+  <section class="panel rules">
+    <div class="section-head"><div><p class="step">07 · 읽는 법</p><h2>이 수치의 한계</h2></div><span class="tag">필독</span></div>
+    <div class="rules-grid">
+      <div class="rule"><h3>지표는 전체 이력으로 계산합니다</h3><ul>
+        <li>MA50·MA200·주봉 RSI 는 CSV 전체로 계산하고, 선택한 구간에서만 매매합니다.</li>
+        <li>구간을 2020년부터로 잡아도 2020년 첫날 MA200 은 2019년 데이터로 이미 서 있습니다.</li>
+        <li>시작일을 데이터 첫 200거래일 안으로 잡으면 그 구간에는 돌파 주문이 나가지 않습니다.</li>
+      </ul></div>
+      <div class="rule"><h3>체결 가정</h3><ul>
+        <li>돌파 : 장중 돌파는 지정가(감시가 +0.1%) 상단에 체결된 것으로 봅니다 — 보수적.</li>
+        <li>돌파 : 갭이 지정가를 넘으면 미체결. 되돌아오면 지정가 체결.</li>
+        <li>그리드 : LOC/MOC 는 당일 종가에 전량 체결된다고 봅니다.</li>
+        <li>수수료 편도 0.1%. 슬리피지·세금·환전 비용은 반영하지 않습니다.</li>
+      </ul></div>
+      <div class="rule"><h3>수량은 소수 주식</h3><ul>
+        <li>백테스트는 소수 주식수를 씁니다. SOXS 조정가에는 반복된 역분할이 반영돼 과거 구간 1주 단가가 수십억 달러라 정수 내림을 적용할 수 없습니다.</li>
+        <li>실주문 수량 내림은 주문 페이지에서만 합니다. 계좌가 작을수록 실제 결과는 이 곡선보다 나빠집니다.</li>
+      </ul></div>
+      <div class="rule"><h3>과최적화 경고</h3><ul>
+        <li>파라미터는 규칙 확정일(2026-09-05) 이전 데이터로 골랐습니다. 이 페이지에서 구간을 바꿔 얻은 수치는 사후적입니다.</li>
+        <li>짧은 구간의 CAGR 은 연 환산이라 과장됩니다. 1년 미만 구간은 총수익률로 읽으세요.</li>
+      </ul></div>
+    </div>
+    <p class="note">계산은 <code>dist/backtest.js</code>, 파라미터는 <code>dist/spec.js</code> 에 있습니다. <code>verify/page_backtest.js</code> 가 <code>engine/strategy.py</code> 와 같은 결과인지 구간·설정을 바꿔가며 대조합니다.</p>
+  </section>
+
+  <footer>
+    <span>과거 성과는 미래를 보장하지 않습니다. 이 페이지는 규칙 검토용입니다.</span>
+    <button id="printBtn">인쇄</button>
+  </footer>
+</main>
+
+<div class="tip" id="tip" hidden></div>
+
+<script src="spec.js"></script>
+<script src="backtest.js"></script>
+<script src="backtest-app.js"></script>
+</body>
+</html>
