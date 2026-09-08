@@ -99,6 +99,13 @@
       <label>보유 수량
         <input type="number" step="1" id="boQty" value="0" />
       </label>
+      <label>호가 단위 (틱)
+        <select id="tickSize">
+          <option value="0.01">$0.01 (기본)</option>
+          <option value="0.005">$0.005 (반페니 종목)</option>
+        </select>
+        <small>자동감시주문의 "X틱" 계산에 씁니다</small>
+      </label>
       <label class="upload">데이터 갱신
         <input type="file" accept=".csv" id="csvFile" multiple />
         <span id="csvLabel">SOXL / SOXS / qqq_regime CSV 선택</span>

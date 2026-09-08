@@ -16,7 +16,7 @@
   };
   var defaultInput = function () {
     return {
-      cash: 100000, boTick: '', boQty: 0, lots: blankLots(), lastRung: 0,
+      cash: 100000, boTick: '', boQty: 0, lots: blankLots(), lastRung: 0, tick: '0.01',
       plan: { date: '', regime: 'AUTO', cash: '', edits: {} }
     };
   };
@@ -49,6 +49,16 @@
   var qty = function (n) { return Number.isFinite(n) ? n.toLocaleString('en-US') + '주' : '—'; };
   var pct = function (n) { return Number.isFinite(n) ? (n * 100).toFixed(n * 100 % 1 ? 2 : 0) + '%' : '—'; };
   var badge = function (t, c) { return '<span class="st ' + c + '">' + esc(t) + '</span>'; };
+
+  // 자동감시주문의 "주문가격 = 감시가 + X틱" 입력용.
+  // 밴드는 비율(0.1%)이고 틱은 절대값이라 X 는 가격대마다 달라진다.
+  // 올림을 쓴다 — 스펙의 지정가보다 낮아져 백테스트가 잡은 체결을 놓치는 쪽을 피한다.
+  function ticksFor(watch, limit) {
+    var t = parseFloat(input.tick) || 0.01;
+    var raw = (limit - watch) / t;
+    var n = Math.ceil(raw - 1e-9);
+    return { tick: t, raw: raw, n: n, price: watch + n * t };
+  }
 
   // ── 렌더 ────────────────────────────────────────────────
   function render() {
@@ -130,6 +140,11 @@
       $('boFormula').innerHTML =
         fx('감시가 T', money(b.watch), '전일 종가 ' + money(r.c) + ' + ' + b.k + ' × 변동폭 ' + money(r.h - r.l))
         + fx('지정가 L', money(b.limit), 'T × 1.001 · 갭 추격 차단')
+        + (function () {
+            var tk = ticksFor(b.watch, b.limit);
+            return fx('감시가 대비', '+' + tk.n + '틱',
+              '틱 $' + tk.tick + ' · 정확히는 ' + tk.raw.toFixed(2) + '틱 → 올림 · 주문가 ' + money(tk.price));
+          })()
         + fx('주문 수량', qty(b.qty), '투입한도 ' + money(b.budget) + ' ÷ (L × 1.001), 정수 내림')
         + (b.capped ? fx('20% 상한 적용', money(b.cap), '전체자산의 20% 로 SOXS 투입을 제한 (§4.3)') : '');
       $('boRows').innerHTML =
@@ -270,7 +285,7 @@
       var b = o.breakout;
       buys.push({
         name: b.ticker + ' 돌파',
-        sub: '장 시작 · STOP-LIMIT (감시가 ' + money(b.watch) + ')',
+        sub: '장 시작 · 자동감시 ' + money(b.watch) + ' → 지정가 매수 (+' + ticksFor(b.watch, b.limit).n + '틱)',
         price: money(b.limit), qty: b.qty,
         amount: b.qty * b.limit * (1 + P.FEE)
       });
@@ -572,6 +587,7 @@
   });
 
   // ── 이벤트 ─────────────────────────────────────────────
+  $('tickSize').addEventListener('change', function (e) { input.tick = e.target.value; render(); });
   ['cash', 'boQty', 'lastRung'].forEach(function (id) {
     $(id).addEventListener('input', function (e) { input[id] = e.target.value; render(); });
   });
@@ -615,6 +631,7 @@
     $('boTick').value = input.boTick || '';
     $('boQty').value = input.boQty;
     $('lastRung').value = input.lastRung;
+    $('tickSize').value = input.tick || '0.01';
     // 시작일을 직접 고정하지 않았으면 항상 최신 봉을 따라간다
     var bars = data.soxl, newest = bars[bars.length - 1][0];
     if (!input.plan.pinned || !input.plan.date) input.plan.date = newest;
