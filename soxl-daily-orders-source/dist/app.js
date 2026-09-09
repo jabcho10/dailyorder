@@ -109,7 +109,7 @@
     $('maPill').textContent = !o.maReady ? '계산 대기' : o.strong ? '정배열' : '정배열 아님';
     $('maPill').className = 'pill ' + (!o.maReady ? '' : o.strong ? 'good' : 'warn');
     $('maReason').textContent = !o.maReady
-      ? 'MA200 계산에 200거래일이 필요합니다. 현재 ' + data.soxl.length + '봉.'
+      ? 'MA' + P.MA_SLOW + ' 계산에 ' + P.MA_SLOW + '거래일이 필요합니다. 현재 ' + data.soxl.length + '봉.'
       : o.strong ? '종가 > MA50 > MA200 · 강한 상승장' : '정배열 조건 불충족 · 기본 배분';
     $('maCard').className = 'card ' + (o.maReady ? (o.strong ? 'good' : 'warn') : '');
 
@@ -117,9 +117,9 @@
     $('dirPill').textContent = o.direction || '관망';
     $('dirPill').className = 'pill ' + (o.direction ? 'good' : 'warn');
     $('dirReason').textContent = o.direction === 'SOXL'
-      ? '전일 종가가 MA200 위입니다. SOXL 감시주문만 제출합니다.'
+      ? '전일 종가가 MA' + P.MA_LEN + ' 위입니다. SOXL 감시주문만 제출합니다.'
       : o.direction === 'SOXS'
-        ? '전일 종가가 MA200 이하이고 QQQ 주봉 RSI 가 45 이하입니다. SOXS 만 제출합니다.'
+        ? '전일 종가가 MA' + P.MA_LEN + ' 이하이고 QQQ 주봉 RSI 가 ' + P.BOS_RSI + ' 이하입니다. SOXS 만 제출합니다.'
         : (o.breakoutReason || '—');
     $('dirCard').className = 'card ' + (o.direction ? 'good' : 'warn');
     perm('permSoxl', o.soxlAllowed); perm('permSoxs', o.soxsAllowed);

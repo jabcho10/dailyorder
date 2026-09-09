@@ -219,13 +219,14 @@
     $('perfTitle').textContent = conf.label + (input.bos ? '' : ' · SOXS 없이');
     $('perfTag').textContent = num(st.yrs, 1) + '년';
 
-    // 워밍업 — MA200 이 서기 전 구간에는 돌파 주문이 나가지 않는다
+    // 워밍업 — 돌파 필터선(MA_LEN)이 서기 전 구간에는 돌파 주문이 나가지 않는다
     var warm = P.MA_LEN - i0;
     $('warmNote').innerHTML = warm > 0
       ? '⚠ 시작일이 데이터 첫 ' + P.MA_LEN + '거래일 안입니다. 처음 <b>' + warm
-        + '거래일</b>은 MA200 이 없어 돌파 주문이 나가지 않고 그리드만 돕니다.'
-      : '지표(MA50·MA200·주봉 RSI)는 CSV 전체로 계산하고 선택 구간에서만 매매합니다. '
-        + '시작일 기준 MA200 은 이전 ' + P.MA_LEN + '거래일로 이미 서 있습니다.';
+        + '거래일</b>은 MA' + P.MA_LEN + ' 이 없어 돌파 주문이 나가지 않고 그리드만 돕니다.'
+      : '지표(돌파 MA' + P.MA_LEN + ' · 정배열 MA' + P.MA_FAST + '/MA' + P.MA_SLOW
+        + ' · 주봉 RSI)는 CSV 전체로 계산하고 선택 구간에서만 매매합니다. '
+        + '시작일 기준 MA' + P.MA_LEN + ' 은 이전 ' + P.MA_LEN + '거래일로 이미 서 있습니다.';
 
     renderStats(st, r, init);
     renderCharts(BARS, r, st, i0, i1, init, conf);

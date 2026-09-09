@@ -15,7 +15,7 @@ from strategy import load
 B = load()
 KEEP = 260                       # dist/data.js 와 같은 구간
 BW = B[-KEEP:]
-WARM = S.MA_LEN + 2              # MA200 이 서는 지점부터
+WARM = S.MA_SLOW + 2             # 정배열 MA200 까지 서는 지점부터
 START = WARM
 
 bo = S.Breakout(0.0)

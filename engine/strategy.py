@@ -8,8 +8,8 @@ SOXL/SOXS 확정 전략 엔진 — 단일 파일, 외부 의존 없음 (표준 �
          그 외                        → 돌파 20% / 그리드 80%
 돌파   : 자동감시주문(스톱-리밋). 감시가·지정가·수량 모두 전일 데이터로 확정된다.
          프리장에서 방향을 하나만 고른다 — 두 종목을 동시에 제출하지 않는다.
-         · SOXL 전일종가 > MA200                     → SOXL 로 돌파 (k=0.7)
-         · SOXL 전일종가 ≤ MA200 & QQQ주봉RSI ≤ 45   → SOXS 로 돌파 (k=0.5)
+         · SOXL 전일종가 > MA50                      → SOXL 로 돌파 (k=0.7)
+         · SOXL 전일종가 ≤ MA50 & QQQ주봉RSI ≤ 45    → SOXS 로 돌파 (k=0.5)
          SOXS 투입액은 전체 자산의 20%를 넘지 않는다.
 그리드 : 7칸 사다리(SOXL 전용). QQQ 주봉 RSI 레짐에 따라 사이즈와 익절률이 달라짐.
          주문수량은 프리장 가용현금과 LOC 지정가로만 계산한다 —
@@ -29,7 +29,7 @@ from datetime import date
 W_BASE     = 0.20                                   # 기본 돌파 슬리브 목표비중
 W_STRONG   = 0.30                                   # 정배열(강한 상승장) 목표비중
 MA_FAST    = 50                                     # 정배열 단기선
-MA_SLOW    = 200                                    # 정배열 장기선 (돌파 필터 MA_LEN 과 별개)
+MA_SLOW    = 200                                    # 정배열 장기선 (돌파 필터 MA_LEN 과 별개 — 같이 바꾸지 말 것)
 DYNAMIC_W  = True                                   # False 면 항상 W_BASE 고정
 FEE        = 0.001                                  # 매수/매도 각각
 MIN_TRADE  = 1.0                                    # 이 금액 미만 주문은 미체결 (먼지 포지션 방지)
@@ -37,9 +37,9 @@ MIN_TRADE  = 1.0                                    # 이 금액 미만 주문�
 # 돌파 — 전부 전일 데이터로 계산 가능
 BO_K       = 0.7                                    # 감시가 = 전일종가 + K × 전일레인지
 BO_BAND    = 0.001                                  # 지정가 = 감시가 × (1+BAND). 갭 추격 차단
-MA_LEN     = 200                                    # 전일종가 > MA200 일 때만 주문
+MA_LEN     = 50                                     # 전일종가 > MA50 일 때만 주문 (§3.1)
 
-# 돌파 (SOXS) — SOXL 이 MA200 아래라 쉬는 날에만
+# 돌파 (SOXS) — SOXL 이 MA50 아래라 쉬는 날에만
 BOS_ON     = True                                   # False 면 기존 SOXL 전용 동작과 완전히 동일
 BOS_K      = 0.5                                    # 문서 §4.2
 BOS_BAND   = 0.001                                  # 갭 추격 차단, SOXL 과 동일
@@ -67,7 +67,7 @@ _DATA = os.path.join(_HERE, '..', 'data')
 # 데이터
 # ──────────────────────────────────────────────────────────────
 def load(soxl_csv=None, regime_csv=None, soxs_csv=None):
-    """SOXL 바에 MA(정배열 단기/장기)·MA200(돌파 필터)·레짐·주봉RSI 를 붙이고, 같은 날짜의 SOXS 바를 b['x'] 로 매단다.
+    """SOXL 바에 MA(정배열 단기/장기)·MA50(돌파 필터)·레짐·주봉RSI 를 붙이고, 같은 날짜의 SOXS 바를 b['x'] 로 매단다.
        SOXS 파일이 없으면 b['x'] 는 None 이 되고 SOXS 돌파는 자동으로 꺼진다.
        레짐 CSV 의 각 행은 이미 '전주 금요일 확정치'라 그날 그대로 쓰면 된다."""
     soxl_csv   = soxl_csv   or os.path.join(_DATA, 'SOXL_OHLC.csv')
@@ -165,7 +165,7 @@ class Breakout:
     def enter(s, B, i, total=None):
         """프리장에서 방향을 하나만 고른다. 두 조건은 배타적이다."""
         b, p = B[i], B[i - 1]
-        if p['ma'] is None:                   # MA200 이 아직 없으면 어느 쪽도 주문하지 않는다
+        if p['ma'] is None:                   # MA50 이 아직 없으면 어느 쪽도 주문하지 않는다
             return
         if p['c'] > p['ma']:                  # 상승 추세 → SOXL 돌파
             s._order(b, p, BO_K, BO_BAND, 'SOXL')

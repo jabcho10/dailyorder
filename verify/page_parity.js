@@ -72,7 +72,7 @@ exp.cases.forEach((c, n) => {
   const before = fails;
   const got = SPEC.computeOrders({
     soxl: SEED.soxl, soxs: SEED.soxs,
-    rsi: c.input.regime === 'BOTTOM' ? 40 : 58.1151,   // 레짐만 맞추면 된다
+    rsi: c.input.rsi,                  // 파이썬 쪽과 같은 값 (레짐 + SOXS 게이트 둘 다 좌우한다)
     cash: c.input.cash,
     boHold: { ticker: c.input.boQty > 0 ? c.input.boTick : null, qty: c.input.boQty },
     lots: c.input.lots, lastRung: c.input.lastRung,

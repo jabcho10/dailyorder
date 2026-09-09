@@ -115,7 +115,7 @@
   /** 프리장에서 방향을 하나만 고른다. 두 조건은 배타적이다. */
   Breakout.prototype.enter = function (B, i, total, bosOn) {
     var b = B[i], p = B[i - 1];
-    if (p.ma == null) return;               // MA200 이 아직 없으면 어느 쪽도 주문하지 않는다
+    if (p.ma == null) return;               // 돌파 필터선(MA_LEN)이 아직 없으면 어느 쪽도 주문하지 않는다
     if (p.c > p.ma) { this.order(b, p, P.BO_K, P.BO_BAND, 'SOXL', null); return; }
     if (bosOn && b.rsi != null && b.rsi <= P.BOS_RSI && b.x && p.x) {
       this.order(b.x, p.x, P.BOS_K, P.BOS_BAND, 'SOXS',

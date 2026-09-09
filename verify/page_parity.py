@@ -37,6 +37,11 @@ def lots(spec):
 
 DATES = [b['d'].isoformat() for b in BW]
 
+# 시나리오 RSI. 레짐 경계(RSI_MID=50)를 넘나들도록 고르고, 양쪽 엔진에 같은 값을 먹인다.
+# spec.js 는 레짐을 RSI 에서 파생시키므로 regime 만 맞추면 SOXS 게이트(BOS_RSI=45)가
+# 엇갈린다 — 돌파 필터선이 짧아져 SOXS 분기에 실제로 도달하면서 드러난 문제다.
+RSI_OF = {'TOP': 58.1151, 'BOTTOM': 40.0}
+
 SCENARIOS = [
     dict(name='정배열 아님 · 보유 없음 · TOP',
          cash=100000.0, bo_shares=0, bo_tick='SOXL', regime='TOP',
@@ -69,8 +74,12 @@ SCENARIOS = [
          lots=[(1, 130.0, 200, DATES[-6], 'TOP')], last_rung=1),
 ]
 
+CSV_RSI = BW[-1]['rsi']          # 데이터 신선도 대조용 원본값
+
 out = []
 for sc in SCENARIOS:
+    sc_rsi = RSI_OF[sc['regime']]
+    BW[-1]['rsi'] = sc_rsi       # 두 엔진이 같은 RSI 를 보게 한다 (SOXS 게이트)
     # 페이지는 총 가용현금 하나만 받는다 -> 전액을 그리드 현금으로 넣고 재분배시킨다
     o = next_orders(BW, 0.0, sc['cash'], sc['bo_shares'], lots(sc['lots']),
                     regime=sc['regime'], bo_tick=sc['bo_tick'],
@@ -80,7 +89,7 @@ for sc in SCENARIOS:
         'name': sc['name'],
         'input': {
             'cash': sc['cash'], 'boQty': sc['bo_shares'], 'boTick': sc['bo_tick'],
-            'regime': sc['regime'], 'lastRung': sc['last_rung'],
+            'regime': sc['regime'], 'rsi': sc_rsi, 'lastRung': sc['last_rung'],
             'lots': [{'no': n, 'px': px, 'qty': q, 'date': d, 'regime': rg}
                      for n, px, q, d, rg in sc['lots']],
         },
@@ -99,9 +108,11 @@ for sc in SCENARIOS:
         }
     })
 
+BW[-1]['rsi'] = CSV_RSI          # 원복
+
 payload = {
     'asOf': BW[-1]['d'].isoformat(),
-    'rsi': BW[-1]['rsi'],
+    'rsi': CSV_RSI,
     'params': {'W_BASE': S.W_BASE, 'W_STRONG': S.W_STRONG, 'BO_K': S.BO_K,
                'BOS_K': S.BOS_K, 'BOS_RSI': S.BOS_RSI, 'BOS_MAX_W': S.BOS_MAX_W,
                'G1_DROP': S.G1_DROP, 'EPS': S.EPS, 'MAX_DAYS': S.MAX_DAYS,

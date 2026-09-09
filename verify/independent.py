@@ -77,7 +77,7 @@ def sma(n):
         if i >= n-1: out[i] = acc/n
     return out
 
-MA  = sma(200)      # 돌파 필터
+MA  = sma(50)       # 돌파 필터 (strategy.MA_LEN 과 같아야 하지만 일부러 상수를 따로 적는다)
 MAF = sma(50)       # 정배열 단기선
 MAS = sma(200)      # 정배열 장기선
 
@@ -224,6 +224,6 @@ prio = sum(1 for i in range(1, N)
            if gL(i) and RSI[i] is not None and RSI[i] <= SRSI)
 print(f'  방향 배타성 검사: 두 게이트 동시 참 {both}건 '
       f'{"[OK]" if both == 0 else "[위반!]"}   (SOXL 주문일 {nL} / SOXS 주문일 {nS})')
-print(f'  참고: RSI<=45 이지만 SOXL 이 MA200 위라 SOXL 을 낸 날 {prio}건')
+print(f'  참고: RSI<=45 이지만 SOXL 이 MA50 위라 SOXL 을 낸 날 {prio}건')
 ok &= both == 0
 print(f'\n종합: {"모든 검증 통과" if ok else "불일치 발생 — 확인 필요"}')

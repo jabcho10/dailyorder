@@ -12,7 +12,7 @@
   var P = {
     W_BASE: 0.20, W_STRONG: 0.30,        // §2 목표 비중
     MA_FAST: 50, MA_SLOW: 200,           // §2 정배열 판정선
-    MA_LEN: 200,                         // §3.1 돌파 필터
+    MA_LEN: 50,                          // §3.1 돌파 필터 (MA_SLOW 와 별개)
     FEE: 0.001,                          // §2 편도 수수료
     BO_K: 0.7, BO_BAND: 0.001,           // §3.2 SOXL 돌파
     BOS_K: 0.5, BOS_BAND: 0.001,         // §4.2 SOXS 돌파
@@ -89,7 +89,11 @@
     var cal = calendar(soxl);
     var prevClose = last[4];
     var ma50 = sma(soxl, P.MA_FAST), ma200 = sma(soxl, P.MA_SLOW);
-    var maReady = ma50 != null && ma200 != null;
+    var maReady = ma50 != null && ma200 != null;       // 정배열(배분) 판정용
+    // 돌파 필터선은 정배열 장기선과 길이가 다르다 (P.MA_LEN vs P.MA_SLOW).
+    // 두 값이 같던 시절의 흔적으로 ma200 을 쓰면 안 된다 — strategy.py 와 어긋난다.
+    var maBo = sma(soxl, P.MA_LEN);
+    var boReady = maBo != null;
 
     var rsi = input.rsi;
     var regime = rsi == null ? null : (rsi <= P.RSI_MID ? 'BOTTOM' : 'TOP');
@@ -114,6 +118,7 @@
 
     var out = {
       asOf: last[0], prevClose: prevClose, ma50: ma50, ma200: ma200, maReady: maReady,
+      maBo: maBo, boReady: boReady,
       rsi: rsi, regime: regime, strong: tw.strong, targetW: tw.w,
       total: total, pool: pool, boCash: boCash, gridCash: gridCash,
       gridStock: gridStock,
@@ -129,13 +134,13 @@
 
     // ── §6-4,5. 돌파 — 프리장에서 방향을 하나만 고른다
     var dir = null;
-    if (maReady) {
-      if (prevClose > ma200) dir = 'SOXL';
+    if (boReady) {
+      if (prevClose > maBo) dir = 'SOXL';
       else if (rsi != null && rsi <= P.BOS_RSI) dir = 'SOXS';
     }
     out.direction = dir;
-    out.soxlAllowed = maReady && prevClose > ma200;
-    out.soxsAllowed = maReady && prevClose <= ma200 && rsi != null && rsi <= P.BOS_RSI;
+    out.soxlAllowed = boReady && prevClose > maBo;
+    out.soxsAllowed = boReady && prevClose <= maBo && rsi != null && rsi <= P.BOS_RSI;
 
     if (dir === 'SOXL') {
       var T = prevClose + P.BO_K * (last[2] - last[3]);
@@ -159,9 +164,9 @@
       };
     } else {
       out.breakout = null;
-      out.breakoutReason = !maReady ? 'MA200 계산에 200거래일이 필요합니다.'
+      out.breakoutReason = !boReady ? 'MA' + P.MA_LEN + ' 계산에 ' + P.MA_LEN + '거래일이 필요합니다.'
         : dir === 'SOXS' ? 'SOXS 일봉이 없습니다.'
-        : 'SOXL 이 MA200 이하이고 QQQ 주봉 RSI 가 45 를 초과합니다.';
+        : 'SOXL 이 MA' + P.MA_LEN + ' 이하이고 QQQ 주봉 RSI 가 ' + P.BOS_RSI + ' 를 초과합니다.';
     }
 
     // ── §6-6. 그리드 신규 진입 (하루 최대 한 칸)
@@ -238,8 +243,8 @@
     if (n < P.MA_LEN + 2) return { known: false, reason: '봉이 부족합니다.' };
 
     var cur = soxl[n - 1], prev = soxl[n - 2];          // cur = 어제 장, prev = 그 전날
-    var ma = sma(soxl.slice(0, n - 1), P.MA_LEN);       // prev 까지의 MA200
-    if (ma == null) return { known: false, reason: 'MA200 을 계산할 수 없습니다.' };
+    var ma = sma(soxl.slice(0, n - 1), P.MA_LEN);       // prev 까지의 돌파 필터선
+    if (ma == null) return { known: false, reason: 'MA' + P.MA_LEN + ' 을 계산할 수 없습니다.' };
 
     var rsi = input.rsi;
     var dir = null;
@@ -297,7 +302,10 @@
   function settleDay(input) {
     var soxl = input.soxl || [], soxs = input.soxs || [];
     var n = soxl.length, m = soxs.length;
-    if (n < P.MA_LEN + 2) return { ok: false, reason: '봉이 부족합니다.' };
+    // computeOrders 는 돌파 필터선(MA_LEN)과 정배열선(MA_SLOW)을 둘 다 쓴다.
+    // 둘 중 긴 쪽을 기준으로 막지 않으면 정배열 판정이 조용히 기본배분으로 떨어진다.
+    var need = Math.max(P.MA_LEN, P.MA_SLOW) + 2;
+    if (n < need) return { ok: false, reason: '봉이 부족합니다.' };
 
     var hist = soxl.slice(0, n - 1), histS = soxs.slice(0, m - 1);
     var bar = soxl[n - 1], barS = soxs[m - 1];
