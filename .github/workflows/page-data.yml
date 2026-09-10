@@ -48,8 +48,12 @@ jobs:
         run: python engine/fetch_soxl.py
 
       - name: QQQ 주봉 레짐 갱신
-        # start=2005-01-01 고정. 이 값을 바꾸면 주봉 RSI 시드가 달라져
-        # 레짐(50)과 SOXS 게이트(45) 판정이 흔들린다. verify/period1_trap.py 참고.
+        # 일봉을 받아 ISO 주(월~일)로 직접 접고 그 주의 마지막 거래일을 라벨로 쓴다.
+        # Yahoo 주봉(interval=1wk)을 그대로 쓰면 인덱스가 '주 시작일' 이라
+        # 진행 중인 이번 주 봉을 그 주 화요일부터 쓰게 되어 룩어헤드가 난다.
+        # start=2005-01-01 고정. 주 경계는 시작일과 무관하지만 Wilder RSI 시드는
+        # 여전히 시작일에 따라 다르다. SOXL 첫날(2010-03-11)까지 5년 워밍업이
+        # 있어야 잔차가 사라진다. verify/period1_trap.py 가 이 성질을 검사한다.
         run: python engine/regime_build.py
 
       - name: SOXS 갱신 + 분할 보정

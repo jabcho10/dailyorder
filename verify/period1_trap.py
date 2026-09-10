@@ -1,101 +1,138 @@
 # -*- coding: utf-8 -*-
-"""
-QQQ 주봉 RSI 함정 검사.
+"""QQQ 주봉 RSI 의 시작일 의존성 검사.
 
-Yahoo 주봉은 요청 period1 이 주 중간이면 첫 주가 잘린 채로 내려온다.
-그 잘린 첫 주가 Wilder RSI 의 초기 시드값을 바꾸고, 시드는 지수적으로 감쇠하지만
-완전히 사라지지 않는다. period1 을 달리 잡으면 같은 날짜의 RSI 가 달라진다는 뜻이다.
+예전에는 regime_build.py 가 Yahoo 에서 interval='1wk' 로 주봉을 바로 받았다.
+그때는 요청 시작일이 주 중간이면 첫 주가 잘린 채 내려오고, 그 잘린 주가
+Wilder RSI 시드를 바꿀 뿐 아니라 이후 '모든' 주 경계까지 통째로 밀어버렸다.
+게다가 인덱스가 주 '시작일' 이라 진행 중인 이번 주 봉이 그 주 화요일부터
+쓰여 룩어헤드가 났다.
 
-이 전략은 RSI 를 두 군데서 쓴다.
-  · 레짐 (RSI<=50) -> 그리드 칸 사이즈와 익절률
-  · SOXS 게이트 (RSI<=45) -> 돌파 방향 선택
-따라서 라벨 일치만이 아니라 RSI 수치와 45 경계 일치까지 확인해야 한다.
-(네트워크 필요)
+지금은 일봉을 받아 ISO 주(월~일)로 직접 접고 그 주의 마지막 거래일을
+라벨로 쓴다. 그래서 주 경계와 라벨은 시작일과 완전히 무관하다.
+남는 것은 Wilder RSI 의 시드 워밍업뿐이고, 이것은 지수적으로 감쇠한다.
+
+이 검사가 확인하는 것:
+  1) 주 라벨과 주간 종가가 시작일과 무관하게 같은가          (구조적 함정 제거)
+  2) 시작+3년 이후 RSI 가 시작일과 무관하게 같은가            (시드 감쇠)
+     -> 레짐(<=50)·SOXS 게이트(<=45) 판정이 한 건도 안 갈리는가
+  3) data/qqq_regime.csv 가 기준 시작일로 새로 만든 값과 같은가
+
+기준 시작일은 2005-01-01. SOXL 첫 거래일이 2010-03-11 이므로 실제로 쓰는
+구간 전체가 5년 이상 워밍업을 거친 뒤다. (네트워크 필요)
 """
-import urllib.request, json, csv, datetime as dt, os, sys
+import csv, os, sys
+from datetime import date, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'engine'))
+import ydl
+import pandas as pd
 
 D_ = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
-RSI_MID, BOS_RSI = 50.0, 45.0
+RSI_LEN, RSI_MID, BOS_RSI = 14, 50.0, 45.0
+BASE = '2005-01-01'
+ALTS = ['2009-01-01', '2010-01-01', '2012-06-13', '2015-03-04']   # 목·금·수·수
+WARMUP_Y = 3
+TOL_RSI = 1e-2            # 시드 감쇠 잔차. 실측 최대 4e-4 라 25배 여유.
+TOL_CLOSE = 1e-3          # 야후 조정계수 재계산 노이즈
 
 
-def wkbars(p1):
-    req = urllib.request.Request(
-        f'https://query1.finance.yahoo.com/v8/finance/chart/QQQ'
-        f'?period1={p1}&period2=9999999999&interval=1wk',
-        headers={'User-Agent': 'Mozilla/5.0'})
-    j = json.loads(urllib.request.urlopen(req, timeout=25).read().decode())
-    r = j['chart']['result'][0]; q = r['indicators']['quote'][0]
-    adj = r['indicators']['adjclose'][0]['adjclose']
-    return [(dt.datetime.fromtimestamp(t, dt.timezone.utc).date(), adj[i])
-            for i, t in enumerate(r['timestamp']) if q['close'][i] is not None]
+def weekly(start):
+    """일봉 -> (주 마지막 거래일, 그 날 종가). 진행 중인 주는 뺀다."""
+    raw = ydl.download('QQQ', start=start, auto_adjust=True)
+    if raw is None or raw.empty:
+        sys.exit('QQQ 다운로드 실패: 빈 데이터프레임')
+    if hasattr(raw.columns, 'levels'):
+        raw.columns = raw.columns.droplevel(1)
+    raw = raw[['Close']].dropna()
+    raw.index = pd.to_datetime(raw.index).tz_localize(None).normalize()
+    last = raw.index[-1].date()
+    wk, cl = [], []
+    for p, g in raw.groupby(raw.index.to_period('W-SUN'), sort=True):
+        if last < p.start_time.date() + timedelta(days=4):
+            break
+        wk.append(g.index[-1].date())
+        cl.append(float(g['Close'].iloc[-1]))
+    return wk, cl
 
 
-def wilder(wk, n=14):
-    rsi = [None]*len(wk); ag = al = 0.0
-    for i in range(1, len(wk)):
-        ch = wk[i][1] - wk[i-1][1]; g = max(ch, 0); l = max(-ch, 0)
-        if i <= n:
-            ag += g; al += l
-            if i == n:
-                ag /= n; al /= n
-                rsi[i] = 100.0 if al == 0 else 100 - 100/(1 + ag/al)
+def rsi_of(cl):
+    r = [None] * len(cl)
+    gs = ls = 0.0
+    for i in range(1, len(cl)):
+        ch = cl[i] - cl[i-1]
+        g, l = max(ch, 0.0), max(-ch, 0.0)
+        if i <= RSI_LEN:
+            gs += g; ls += l
+            if i == RSI_LEN:
+                ag, al = gs/RSI_LEN, ls/RSI_LEN
+                r[i] = 100.0 if al == 0 else 100 - 100/(1 + ag/al)
         else:
-            ag = (ag*(n-1) + g)/n; al = (al*(n-1) + l)/n
-            rsi[i] = 100.0 if al == 0 else 100 - 100/(1 + ag/al)
-    return rsi
+            ag = (ag*(RSI_LEN-1) + g)/RSI_LEN
+            al = (al*(RSI_LEN-1) + l)/RSI_LEN
+            r[i] = 100.0 if al == 0 else 100 - 100/(1 + ag/al)
+    return r
 
 
-mine, mineR = {}, {}
-for row in csv.DictReader(open(os.path.join(D_, 'qqq_regime.csv'))):
-    d = row['Date'].strip()
-    mine[d] = row['Regime'].strip()
-    mineR[d] = float(row['RSI'])
-dates = sorted(mine)
+def main():
+    bad = []
+    print('QQQ 주봉 시작일 의존성 검사')
+    bw, bc = weekly(BASE)
+    brsi = dict(zip(bw, rsi_of(bc)))
+    bclose = dict(zip(bw, bc))
+    print(f'  기준 start={BASE}  주봉 {len(bw)}개  {bw[0]} ~ {bw[-1]}')
 
+    for s in ALTS:
+        wk, cl = weekly(s)
+        rsi = dict(zip(wk, rsi_of(cl)))
+        com = [d for d in wk if d in brsi]
 
-def check(p1):
-    wk = wkbars(p1)
-    rsi = wilder(wk)
-    j = 0
-    same_rg = same_gate = 0; diffs = []
-    for d in dates:
-        while j+1 < len(wk) and wk[j+1][0].isoformat() < d: j += 1
-        k = j if wk[j][0].isoformat() < d else j-1
-        v = rsi[k] if k >= 0 else None
-        if v is None:
+        # 1) 라벨·종가는 시작일과 무관해야 한다
+        missing = [d for d in wk if d not in bclose]
+        dclose = max((abs(bclose[d] - c) for d, c in zip(wk, cl) if d in bclose),
+                     default=0.0)
+        if missing:
+            bad.append(f'{s}: 기준에 없는 주 라벨 {len(missing)}개 (예 {missing[:3]})')
+        if dclose > TOL_CLOSE:
+            bad.append(f'{s}: 주간 종가 최대차 {dclose:.6f} > {TOL_CLOSE}')
+
+        # 2) 시드가 감쇠한 뒤에는 RSI 도 같아야 한다
+        y, m, d = map(int, s.split('-'))
+        cut = date(y + WARMUP_Y, m, d)
+        warm = [x for x in com if x >= cut and rsi[x] is not None and brsi[x] is not None]
+        dr = max((abs(rsi[x] - brsi[x]) for x in warm), default=0.0)
+        nmid = sum(1 for x in warm if (rsi[x] <= RSI_MID) != (brsi[x] <= RSI_MID))
+        n45 = sum(1 for x in warm if (rsi[x] <= BOS_RSI) != (brsi[x] <= BOS_RSI))
+        print(f'  start={s}  주봉 {len(wk)}개  라벨차 {len(missing)}  종가차 {dclose:.2e}  '
+              f'| +{WARMUP_Y}년 이후 {len(warm)}개: RSI차 {dr:.2e} 레짐 {nmid} 게이트45 {n45}')
+        if dr > TOL_RSI:
+            bad.append(f'{s}: 워밍업 뒤 RSI 최대차 {dr:.2e} > {TOL_RSI}')
+        if nmid or n45:
+            bad.append(f'{s}: 워밍업 뒤 판정 불일치 레짐 {nmid}건 게이트45 {n45}건')
+
+    # 3) 디스크의 CSV 가 기준값과 같은가
+    rows = list(csv.DictReader(open(os.path.join(D_, 'qqq_regime.csv'))))
+    nbad = 0
+    for r in rows:
+        if not r['RSI']:
             continue
-        rg = 'BOTTOM' if v <= RSI_MID else 'TOP'
-        if rg == mine[d]: same_rg += 1
-        if (v <= BOS_RSI) == (mineR[d] <= BOS_RSI): same_gate += 1
-        diffs.append(abs(v - mineR[d]))
-    wd = '월화수목금토일'[dt.date.fromtimestamp(p1).weekday()]
-    n = len(diffs)
-    print(f'  period1={dt.date.fromtimestamp(p1)}({wd})  주봉 {len(wk)}개  '
-          f'마지막 3: {[str(x[0]) for x in wk[-3:]]}')
-    print(f'      레짐(<=50) 일치 {same_rg}/{n} ({same_rg/n*100:.2f}%)   '
-          f'SOXS 게이트(<=45) 일치 {same_gate}/{n} ({same_gate/n*100:.2f}%)')
-    print(f'      RSI 절대오차  평균 {sum(diffs)/n:.4f}  최대 {max(diffs):.4f}')
-    return same_rg == n and same_gate == n
+        y, m, d = map(int, r['WeekEnd'].split('-'))
+        we = date(y, m, d)
+        if we not in brsi or brsi[we] is None:
+            nbad += 1
+        elif abs(float(r['RSI']) - brsi[we]) > TOL_RSI:
+            nbad += 1
+    print(f'  qqq_regime.csv {len(rows)}행 중 기준과 어긋난 행 {nbad}건')
+    if nbad:
+        bad.append(f'qqq_regime.csv 가 기준 시작일 재계산과 {nbad}행 어긋남 '
+                   f'— regime_build.py 재실행 필요')
+
+    if bad:
+        print('\n종합: [실패]')
+        for b in bad:
+            print(f'  · {b}')
+        sys.exit(1)
+    print('\n종합: [통과] 주 경계·라벨은 시작일과 무관하고, 워밍업 뒤 RSI 도 일치한다')
 
 
-REF = 1104537600        # 2005-01-01 — regime_build.py 가 쓰는 기준값
-
-print('period1 별 주봉 정합성 검사')
-print('기대: 기준값만 100% 일치하고 나머지는 어긋나야 한다 (그것이 이 함정의 증거다)')
-try:
-    res = {p1: check(p1) for p1 in (REF, 1230768000, 1262304000)}
-except Exception as e:
-    print(f'  [네트워크 실패] {e}')
-    print('  ※ 이 검사는 Yahoo 조회가 필요하다. 오프라인이면 건너뛴다.')
-    sys.exit(0)
-
-others = [v for p1, v in res.items() if p1 != REF]
-if not res[REF]:
-    print('\n종합: [실패] 기준 period1 조차 CSV 와 어긋난다 — regime_build.py 재실행 필요')
-elif all(others):
-    print('\n종합: [주의] period1 을 바꿔도 전부 일치했다. 함정이 사라졌는지 '
-          'Yahoo 응답 형식이 바뀌었는지 확인할 것')
-else:
-    print('\n종합: [OK] 기준 period1(2005-01-01) 과 CSV 가 정확히 일치하고,')
-    print('      다른 period1 은 어긋난다 = 주봉 시드 함정이 여전히 존재한다.')
-    print('      ※ QQQ 를 다시 받을 때는 반드시 start=2005-01-01 로 고정할 것.')
+if __name__ == '__main__':
+    main()
