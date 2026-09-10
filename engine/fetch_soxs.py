@@ -8,14 +8,19 @@ SOXL 과 SOXS 는 같은 지수의 ±3배이므로 일간수익률 합 rL + rS �
 임계값 50% 는 실제 시장 변동과 분할 잔재를 안전하게 가른다.
 """
 import os, csv, sys
-import pandas as pd, yfinance as yf
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ydl
 
 D = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 THRESH = 0.50
 
 
 def fetch(ticker, start='2010-01-01'):
-    df = yf.download(ticker, start=start, auto_adjust=True, progress=False)
+    df = ydl.download(ticker, start=start, auto_adjust=True)
+    if df is None or df.empty:
+        sys.exit(f'{ticker} 다운로드 실패: 빈 데이터프레임')
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()

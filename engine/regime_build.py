@@ -2,15 +2,20 @@
 """QQQ weekly RSI(14, Wilder) -> regime flag, aligned to SOXL trading days.
    NO LOOK-AHEAD: a weekly bar closing on date W is only usable from the next
    SOXL trading day > W."""
-import yfinance as yf, csv, os
+import csv, os, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ydl
 D_=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','data')
 from datetime import date
 
 RSI_LEN, RSI_MID = 14, 50
 
 # --- QQQ weekly (fetch daily then resample so week-end dates are exact) ---
-df = yf.download('QQQ', start='2005-01-01', end='2026-09-01',
-                 interval='1wk', auto_adjust=True, progress=False)
+df = ydl.download('QQQ', start='2005-01-01', end='2026-09-01',
+                  interval='1wk', auto_adjust=True)
+if df is None or df.empty:
+    sys.exit('QQQ 다운로드 실패: 빈 데이터프레임')
 if hasattr(df.columns, 'levels'): df.columns = df.columns.droplevel(1)
 df = df.dropna()
 cl = df['Close'].tolist()

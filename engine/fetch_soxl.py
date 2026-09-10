@@ -10,7 +10,9 @@
 """
 import os, sys
 import pandas as pd
-import yfinance as yf
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ydl
 
 D = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 OUT = os.path.join(D, 'SOXL_OHLC.csv')
@@ -19,7 +21,7 @@ COLS = ['Open', 'High', 'Low', 'Close', 'Volume']
 
 
 def fetch():
-    df = yf.download('SOXL', start=START, auto_adjust=True, progress=False)
+    df = ydl.download('SOXL', start=START, auto_adjust=True)
     if df is None or df.empty:
         sys.exit('다운로드 실패: 빈 데이터프레임')
     if isinstance(df.columns, pd.MultiIndex):
